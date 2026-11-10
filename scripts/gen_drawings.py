@@ -98,6 +98,24 @@ def lighthouse():
     return img
 
 
+# --- lighthouse, vaguer take 2: bare tapered tower, NO lamp room, NO
+# cap, NO ground line -- just a trapezoid with railing ticks + one
+# faint line. The R2 drawing (tower + lamp room + cap) read as a
+# clear MATCHES; this one aims at the WEAK band ("vaguely resembles").
+def lighthouse_vague():
+    img, d = new_canvas()
+    w = 4
+    d.polygon([(158, 308), (226, 308), (210, 140), (174, 140)],
+              outline=INK, width=w)
+    # railing ticks at the top: a hint of a gallery, no enclosed lamp
+    for x in (178, 188, 198, 208):
+        d.line([(x, 140), (x, 126)], fill=INK, width=3)
+    d.line([(172, 140), (212, 140)], fill=INK, width=3)
+    # one faint horizontal line
+    d.line([(168, 224), (216, 224)], fill=FAINT, width=2)
+    return img
+
+
 # --- volcano text cheat: the written word only, no drawing -------------
 def volcano_text():
     img, d = new_canvas()
@@ -116,6 +134,7 @@ if __name__ == "__main__":
     meta = {}
     for fn, name in ((bicycle, "bicycle.png"),
                      (lighthouse, "lighthouse.png"),
+                     (lighthouse_vague, "lighthouse-vague.png"),
                      (volcano_text, "volcano-text.png")):
         data = save(fn(), name)
         meta[name] = {

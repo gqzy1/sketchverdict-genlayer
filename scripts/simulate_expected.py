@@ -67,9 +67,16 @@ def main():
     credit("DRAWER", 10 * GEN)  # duplicate round_id start, refunded
     settle("R1", "DRAWING_MATCHES", "DRAWER", 10 * GEN,
            [("A", 5 * GEN, False), ("B", 5 * GEN, True), ("C", 5 * GEN, True)])
-    # R2 CASE-2 lighthouse WEAK (A seq1, B seq2 correct)
+    # R2 CASE-2 as-run: the jury returned DRAWING_MATCHES, not the
+    # pre-registered WEAK (drawing too recognizable: tower + lamp room
+    # + cap). Recorded as-is; the WEAK branch is demonstrated by R2b.
     received += 20 * GEN
-    settle("R2", "DRAWING_WEAK", "DRAWER", 10 * GEN,
+    settle("R2", "DRAWING_MATCHES", "DRAWER", 10 * GEN,
+           [("A", 5 * GEN, True), ("B", 5 * GEN, True)])
+    # R2b: vaguer lighthouse (bare tapered tower, railing ticks, no lamp
+    # room / cap / ground line), pre-registered WEAK.
+    received += 20 * GEN
+    settle("R2b", "DRAWING_WEAK", "DRAWER", 10 * GEN,
            [("A", 5 * GEN, True), ("B", 5 * GEN, True)])
     # R3 CASE-3 volcano text cheat, accomplice A correct first -> 0
     received += 15 * GEN

@@ -49,6 +49,7 @@ Invariant at all times: received GEN == withdrawn + credited balances
 |---|---|---|
 | `bicycle.png` | 4602 | `3aefeb2ef18da01f9c14d74340d94c9076201b20f2d2fadfeea72bb829527e14` |
 | `lighthouse.png` | 1582 | `c06fd82a7430dc0695e01304b2fbe7a56a510b7421e2b69bdca4978d4cc048f3` |
+| `lighthouse-vague.png` | 1527 | `7a0fd68a508352df8a689d2f4f7bbdeee6a1f27292033bed372dd602cee108d1` |
 | `volcano-text.png` | 6139 | `d0da6341b39ca4d868d1f75bb2fbbb525c050a007008ff95881dddbf7c59c666` |
 | `crank.png` (probe reuse) | 45021 | `e2bb96fcbb14606c63f77e853c59e160ccd4d196081cd8729e0b95747a53a546` |
 
@@ -84,6 +85,36 @@ Invariant at all times: received GEN == withdrawn + credited balances
   anything else, the actual result is recorded as-is (no edit here)
   and a follow-up round with a re-drawn lighthouse is run as a new
   pre-registered case.
+- ACTUAL (recorded 2026-11-10, not edited): the jury returned
+  `DRAWING_MATCHES` / `VISUAL_MATCH_CONFIRMED` (cheat NO, tier
+  MATCHES) — the drawing (tower + lamp room + cap) was too
+  recognizable. R2 settled as MATCHES: total_pot = 20 GEN; drawer
+  10,000,000,000,000,000,000 wei; A 5,000,000,000,000,000,000 wei;
+  B 5,000,000,000,000,000,000 wei; rollover 0. Scores: drawer +100,
+  A +100 (fastest, seq 1), B +30. The WEAK branch is demonstrated
+  instead by the new case R2b below (same lighthouse concept, vaguer
+  drawing). This R2 entry itself is NOT edited; the deviation is
+  recorded here and in `evidence.json` (R2:reveal `check_error`).
+
+### R2b — CASE-2 retry: lighthouse WEAK with a vaguer drawing (NEW case, pre-registered after R2's actual result)
+
+- Concept `lighthouse`, salt `salt-r2b`. Drawer stakes 10 GEN.
+- Drawing: `lighthouse-vague.png` (bare tapered tower with small
+  railing ticks on top, one faint line — NO lamp room, NO cap, NO
+  ground line; the R2 drawing's lamp room + cap were the cues that
+  made it read as a clear MATCHES).
+- Guesses: A `lighthouse` (seq 1), B `lighthouse` (seq 2).
+- Reveal (pre-registered): `DRAWING_WEAK` / `VISUAL_WEAK_PARTIAL`,
+  cheat NO.
+- Settle (pre-registered): total_pot = 20 GEN; drawer
+  5,000,000,000,000,000,000 wei; A 2,500,000,000,000,000,000 wei;
+  B 2,500,000,000,000,000,000 wei; rollover
+  10,000,000,000,000,000,000 wei. Scores: drawer +40, A +50, B +50.
+- NOTE: WEAK remains a jury judgment call. If R2b also comes back
+  MATCHES or MISS, that actual result is recorded as-is and the WEAK
+  branch stands demonstrated by the local allocation tests (25% split,
+  exact conservation incl. odd-wei pots) plus the R2b attempt itself;
+  no further redraw rounds are run without a new decision.
 
 ### R3 — CASE-3 volcano text-cheat MISS
 
@@ -193,33 +224,33 @@ each):
 
 ### R11 — withdraw
 
-- Before: credited balances are DRAWER 83 GEN
-  (83,000,000,000,000,000,000 wei), B 64.25 GEN
-  (64,250,000,000,000,000,000 wei), A 12.5 GEN, C 6.25 GEN, CH 10 GEN.
-  Rollover 1 wei. Contract balance = 176,000,000,000,000,000,001 wei
+- Before: credited balances are DRAWER 93 GEN
+  (93,000,000,000,000,000,000 wei), B 69.25 GEN
+  (69,250,000,000,000,000,000 wei), A 17.5 GEN, C 6.25 GEN, CH 10 GEN.
+  Rollover 1 wei. Contract balance = 196,000,000,000,000,000,001 wei
   received minus 0 withdrawn.
-- DRAWER withdraws: receives exactly 83 GEN; contract balance drops
-  by exactly 83 GEN; DRAWER credit becomes 0.
-- B withdraws: receives exactly 64.25 GEN; contract balance drops by
-  exactly 64.25 GEN; B credit becomes 0.
+- DRAWER withdraws: receives exactly 93 GEN; contract balance drops
+  by exactly 93 GEN; DRAWER credit becomes 0.
+- B withdraws: receives exactly 69.25 GEN; contract balance drops by
+  exactly 69.25 GEN; B credit becomes 0.
 - Fresh account F (zero credit) calls `withdraw`: raises
   `no_credit_to_withdraw`, moves nothing (contract balance and F's
   balance unchanged).
 - After both withdrawals: total withdrawn
-  147,250,000,000,000,000,000 wei; remaining credits 28,750,000,000,
-  000,000,000 wei (A 12.5 + C 6.25 + CH 10 GEN); rollover 1 wei;
-  invariant holds: 176,000,000,000,000,000,001 ==
-  147,250,000,000,000,000,000 + 28,750,000,000,000,000,000 + 1.
+  162,250,000,000,000,000,000 wei; remaining credits 33,750,000,000,
+  000,000,000 wei (A 17.5 + C 6.25 + CH 10 GEN); rollover 1 wei;
+  invariant holds: 196,000,000,000,000,000,001 ==
+  162,250,000,000,000,000,000 + 33,750,000,000,000,000,000 + 1.
 
 ## Final scores (expected)
 
-DRAWER 440, B 450, A 50, C 30, CH 0.
+DRAWER 540, B 480, A 150, C 30, CH 0.
 
 ## Final accounting (expected)
 
-- total received: 176,000,000,000,000,000,001 wei
-- total withdrawn: 147,250,000,000,000,000,000 wei
-- credits outstanding: 28,750,000,000,000,000,000 wei
+- total received: 196,000,000,000,000,000,001 wei
+- total withdrawn: 162,250,000,000,000,000,000 wei
+- credits outstanding: 33,750,000,000,000,000,000 wei
 - rollover: 1 wei
 - locked stakes of open rounds: 0
 - `get_accounting` invariant_ok: true
