@@ -170,44 +170,88 @@ async function readJson(functionName, args = []) {
   return { data: r.value === '' ? null : JSON.parse(r.value), finalized: r.finalized, readAt: r.readAt };
 }
 
+// Readback resilience: one refresh is ~13 sequential latest-final calls
+// and a shared-egress RPC can fail a whole attempt (observed twice in a
+// live browser: RPC_RETRY_EXHAUSTED, while headless runs on another path
+// succeeded). So a failed refresh retries the WHOLE refresh before any
+// error banner appears, and a refresh that got room + gallery but lost
+// the current round still renders what it read instead of aborting.
+const READBACK_MAX_ATTEMPTS = 3; // 1 initial attempt + 2 whole-refresh retries
+const READBACK_RETRY_DELAYS_MS = [5000, 15000]; // backoff between attempts
+
 async function refreshSnapshot() {
   if (readingBack) return;
   readingBack = true;
   renderStatus();
   try {
-    const roomR = await readJson('get_room_state', []);
-    const galleryR = await readJson('get_gallery', []);
-    const roundId = currentRoundId || roomR.data?.current_round_id || '';
-    const roundR = roundId ? await readJson('get_round', [roundId]) : null;
-    const galleryRounds = {};
-    // The snapshot flag is the AND of every constituent latest-final read
-    // envelope — computed from readFinal's stamps only, never asserted here.
-    let finalized = roomR.finalized && galleryR.finalized && (roundR ? roundR.finalized : true);
-    for (const e of galleryR.data?.entries || []) {
+    let lastError = null;
+    for (let attempt = 0; attempt < READBACK_MAX_ATTEMPTS; attempt++) {
       try {
-        const rr = await readJson('get_round', [e.round_id]);
-        galleryRounds[e.round_id] = rr.data;
-        finalized = finalized && rr.finalized;
-      } catch { /* keep gallery entry without image */ }
+        await refreshSnapshotOnce();
+        // Success (full or partial) — a retry notice from an earlier
+        // attempt must not linger as if the readback were still failing.
+        if (attempt > 0) setNotice(`${t(lang, 'readbackOk')} · ${snapshot.readBackAt}`, 'ok');
+        return;
+      } catch (error) {
+        lastError = error;
+        if (attempt + 1 >= READBACK_MAX_ATTEMPTS) break;
+        // Retry pending: say so in the notice and keep the last good
+        // snapshot on screen (it is never cleared here), with its
+        // readBackAt untouched, so "最近读回" still shows the last success.
+        setNotice(`${t(lang, 'readbackRetrying')} (${attempt + 2}/${READBACK_MAX_ATTEMPTS})`, 'info');
+        await sleep(READBACK_RETRY_DELAYS_MS[attempt] ?? 15000);
+      }
     }
-    let statsR = null;
-    if (wallet?.address) {
-      try {
-        statsR = await readJson('get_player_stats', [wallet.address.toLowerCase()]);
-        finalized = finalized && statsR.finalized;
-      } catch { statsR = null; }
-    }
-    snapshot = { room: roomR.data, round: roundR ? roundR.data : null, gallery: galleryR.data,
-      galleryRounds, stats: statsR ? statsR.data : null, finalized,
-      readAt: roomR.readAt, readBackAt: roomR.readAt };
-    const fired = await maybeAutoReveal();
-    if (fired) setTimeout(() => refreshSnapshot(), 5000); // re-read after the auto-reveal settles
-  } catch (error) {
-    setNotice(`${t(lang, 'txError')} (${error.message})`, 'error');
+    // All attempts exhausted: only NOW show the error banner. The last
+    // successful snapshot (if any) stays rendered; its readBackAt is
+    // untouched, so the footer still shows the last successful readback.
+    setNotice(`${t(lang, 'txError')} (${lastError?.message || ''})`, 'error');
   } finally {
     readingBack = false;
     renderAll();
   }
+}
+
+async function refreshSnapshotOnce() {
+  const roomR = await readJson('get_room_state', []);
+  const galleryR = await readJson('get_gallery', []);
+  const roundId = currentRoundId || roomR.data?.current_round_id || '';
+  // Partial readback: the current-round read may fail while room + gallery
+  // succeeded. Do not abort — render room + gallery, leave round null,
+  // and force the snapshot flag false: a failed constituent can never
+  // count as FINALIZED, so the marker, the verdict displays and the
+  // export gate all stay closed.
+  let roundR = null;
+  let roundOk = !roundId;
+  if (roundId) {
+    try {
+      roundR = await readJson('get_round', [roundId]);
+      roundOk = true;
+    } catch { roundR = null; roundOk = false; }
+  }
+  const galleryRounds = {};
+  // The snapshot flag is the AND of every constituent latest-final read
+  // envelope — computed from readFinal's stamps only, never asserted here.
+  let finalized = roomR.finalized && galleryR.finalized && roundOk;
+  for (const e of galleryR.data?.entries || []) {
+    try {
+      const rr = await readJson('get_round', [e.round_id]);
+      galleryRounds[e.round_id] = rr.data;
+      finalized = finalized && rr.finalized;
+    } catch { /* keep gallery entry without image */ }
+  }
+  let statsR = null;
+  if (wallet?.address) {
+    try {
+      statsR = await readJson('get_player_stats', [wallet.address.toLowerCase()]);
+      finalized = finalized && statsR.finalized;
+    } catch { statsR = null; }
+  }
+  snapshot = { room: roomR.data, round: roundR ? roundR.data : null, gallery: galleryR.data,
+    galleryRounds, stats: statsR ? statsR.data : null, finalized,
+    readAt: roomR.readAt, readBackAt: roomR.readAt };
+  const fired = await maybeAutoReveal();
+  if (fired) setTimeout(() => refreshSnapshot(), 5000); // re-read after the auto-reveal settles
 }
 
 // Auto-trigger: the drawer client watches for a new guess matching the local
@@ -644,10 +688,15 @@ function renderAll() {
 }
 function renderRoom() {
   const live = readbackOk();
-  const room = live ? snapshot.room : null;
+  // Room-level facts come from a successful latest-final get_room_state,
+  // so they render whenever that read succeeded — including a partial
+  // snapshot whose current-round read failed. Round-derived facts (the
+  // pot, the pipeline stages) stay behind the full-readback gate: they
+  // are verdict-adjacent and must not render from a partial snapshot.
+  const room = snapshot?.room || null;
   $('#pool-rollover').textContent = room ? fmtGenExact(room.rollover_pool_wei) : t(lang, 'dashUnconfirmed');
   $('#round-count').textContent = room ? String(room.round_count) : t(lang, 'dashUnconfirmed');
-  const rid = live ? (snapshot.round?.round_id || room?.current_round_id || '') : '';
+  const rid = live ? (snapshot.round?.round_id || room?.current_round_id || '') : (room?.current_round_id || '');
   $('#round-id-display').textContent = rid || t(lang, 'unconfirmed');
   if (rid && !currentRoundId) { currentRoundId = rid; $('#round-id').value = rid; }
   // Progress dots under the canvas: stage names render only after a
@@ -825,7 +874,13 @@ function galleryCard(e, detail) {
 }
 function renderGallery() {
   const box = $('#gallery');
-  if (!readbackOk()) { box.innerHTML = `<p class="empty">${esc(t(lang, 'unconfirmedLong'))}</p>`; return; }
+  // Partial readback: the gallery list itself is FINALIZED data from a
+  // successful latest-final get_gallery, so it renders whenever it was
+  // read — the full-readback gate is not required for the list. A card's
+  // verdict/image still comes only from its own FINALIZED per-round read
+  // (see galleryCard), and the export button inside a card still needs
+  // snapshot.finalized. Without any gallery data at all, UNCONFIRMED.
+  if (!snapshot?.gallery && !readbackOk()) { box.innerHTML = `<p class="empty">${esc(t(lang, 'unconfirmedLong'))}</p>`; return; }
   const entries = snapshot.gallery?.entries || [];
   if (!entries.length) { box.innerHTML = `<p class="empty">${esc(t(lang, 'noGallery'))}</p>`; return; }
   box.innerHTML = entries.map((e) => galleryCard(e, snapshot.galleryRounds[e.round_id] || null)).join('');

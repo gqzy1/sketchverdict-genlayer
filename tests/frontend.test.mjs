@@ -390,6 +390,96 @@ test('redesign: exactly 6 colors, 3 fonts, CSS-only paper texture', () => {
     'three font tokens present');
 });
 
+test('readback resilience: a failed refresh retries the whole refresh before any error banner', () => {
+  const app = read('site/src/app.js');
+  // 1 initial attempt + 2 whole-refresh retries, backoff ~5s then ~15s.
+  assert.ok(app.includes('const READBACK_MAX_ATTEMPTS = 3'), 'max attempts is 3');
+  assert.ok(app.includes('const READBACK_RETRY_DELAYS_MS = [5000, 15000]'), 'backoff is 5s then 15s');
+  const wrapStart = app.indexOf('async function refreshSnapshot()');
+  const wrapEnd = app.indexOf('async function refreshSnapshotOnce', wrapStart);
+  assert.ok(wrapStart !== -1 && wrapEnd !== -1, 'retry wrapper + single-attempt split exist');
+  const wrap = app.slice(wrapStart, wrapEnd);
+  assert.ok(wrap.includes('for (let attempt = 0; attempt < READBACK_MAX_ATTEMPTS; attempt++)'),
+    'wrapper loops over whole-refresh attempts');
+  assert.ok(wrap.includes('await refreshSnapshotOnce()'), 'each attempt runs one full refresh');
+  assert.ok(wrap.includes("t(lang, 'readbackRetrying')"), 'retries show a retrying status, not an error');
+  assert.ok(wrap.includes('await sleep(READBACK_RETRY_DELAYS_MS[attempt]'),
+    'retries wait the backoff before the next attempt');
+  // The error banner appears only after every attempt is exhausted.
+  assert.ok(wrap.includes("t(lang, 'txError')"), 'error banner exists in the wrapper');
+  assert.ok(wrap.indexOf("t(lang, 'readbackRetrying')") < wrap.indexOf("t(lang, 'txError')"),
+    'retrying status precedes the error banner');
+  // The wrapper never touches the snapshot itself: a failed refresh cannot
+  // clear the last good snapshot, and its readBackAt survives untouched.
+  assert.ok(!wrap.includes('snapshot ='), 'retry wrapper never assigns snapshot');
+  const onceStart = app.indexOf('async function refreshSnapshotOnce');
+  const onceEnd = app.indexOf('async function maybeAutoReveal', onceStart);
+  const once = app.slice(onceStart, onceEnd);
+  assert.ok(!once.includes('setNotice'), 'a single attempt never shows its own banner');
+});
+
+test('readback resilience: partial render — round failure keeps room + gallery, finalized false', () => {
+  const app = read('site/src/app.js');
+  const onceStart = app.indexOf('async function refreshSnapshotOnce');
+  const onceEnd = app.indexOf('async function maybeAutoReveal', onceStart);
+  const once = app.slice(onceStart, onceEnd);
+  // The current-round read is wrapped: its failure must not abort the refresh.
+  const roundSlice = once.slice(once.indexOf('const roundId'), once.indexOf('const galleryRounds'));
+  assert.ok(roundSlice.includes('try {'), 'current-round read is guarded');
+  assert.ok(roundSlice.includes("readJson('get_round'"), 'guarded read is the current round');
+  assert.ok(roundSlice.includes('catch'), 'round failure is caught, not thrown');
+  assert.ok(roundSlice.includes('roundOk = false'), 'a failed round read marks the round not-ok');
+  // The snapshot flag is the AND of every constituent — a failed round
+  // forces it false, so the marker, verdict displays and export stay closed.
+  assert.ok(once.includes('let finalized = roomR.finalized && galleryR.finalized && roundOk'),
+    'finalized AND includes the round-ok flag');
+  assert.ok(once.includes('round: roundR ? roundR.data : null'),
+    'a failed round read leaves round null in the snapshot');
+  // Room facts render from a successful get_room_state, not only behind
+  // the full-readback gate.
+  const roomStart = app.indexOf('function renderRoom()');
+  const roomBody = app.slice(roomStart, app.indexOf('\nfunction ', roomStart));
+  assert.ok(roomBody.includes('const room = snapshot?.room || null'),
+    'room facts render whenever the room read succeeded');
+  assert.ok(roomBody.includes('const live = readbackOk()'),
+    'round-derived facts in the room still gate on the full readback');
+  // The gallery list renders from a successful get_gallery; a card's
+  // verdict/image still comes only from its own FINALIZED per-round read.
+  const galStart = app.indexOf('function renderGallery()');
+  const galBody = app.slice(galStart, app.indexOf('\nfunction renderEvidence', galStart));
+  assert.ok(galBody.includes('!snapshot?.gallery'), 'gallery renders when its own read succeeded');
+  assert.ok(galBody.includes('readbackOk()'), 'gallery still names the full-readback gate');
+  // Export stays closed on a partial snapshot: the card button and the
+  // dossier gate both require snapshot.finalized.
+  assert.ok(app.includes("detail.status === 'SETTLED' && snapshot?.finalized ? '' : 'disabled'"),
+    'gallery export button stays disabled without snapshot.finalized');
+});
+
+test('readback resilience: a failed refresh never clears the last good snapshot or its readBackAt', () => {
+  const app = read('site/src/app.js');
+  // The only `snapshot = null` is the cold-start declaration (`let
+  // snapshot = null`); no code path ever nulls it out after init.
+  const nulled = app.split('\n').filter((l) => /^\s*snapshot = null/.test(l));
+  assert.equal(nulled.length, 0, 'snapshot must never be nulled out after init');
+  // The only snapshot assignment lives in the successful single-attempt
+  // path; the retry wrapper and every catch path leave it alone. (The
+  // `let snapshot = null` declaration is the cold-start init, not an
+  // assignment — it is excluded from the count.)
+  const assigns = app.split('\n')
+    .map((l, i) => ({ l, n: i + 1 }))
+    .filter(({ l }) => l.includes('snapshot =') && !/^\s*let\s+snapshot/.test(l));
+  assert.equal(assigns.length, 1,
+    'exactly one snapshot assignment: ' + assigns.map((a) => a.n).join(', '));
+  // "最近读回" shows the last SUCCESSFUL readback time only; a failed
+  // attempt cannot overwrite it because the snapshot is never replaced.
+  assert.ok(app.includes("snapshot?.finalized ? snapshot.readBackAt : t(lang, 'neverReadBack')"),
+    'last-readback shows only a finalized snapshot’s readBackAt');
+  // The retrying status key exists in both languages (parity is enforced
+  // by the i18n test, but the content must actually say retrying).
+  assert.ok(t('zh', 'readbackRetrying').includes('重试'), 'zh retrying text');
+  assert.ok(t('en', 'readbackRetrying').toLowerCase().includes('retry'), 'en retrying text');
+});
+
 test('read path smoke: gen_call latest-final against the live evidence contract (read-only)', async () => {
   const { abi } = await import('genlayer-js');
   const { calldata, transactions } = abi;
