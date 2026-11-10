@@ -22993,9 +22993,11 @@ function fmtGen(weiStr) {
 function fmtGenExact(weiStr) {
   try {
     const w = BigInt(weiStr ?? "0");
-    const base = fmtGen(weiStr);
-    const sub = w % GEN % 10n ** 12n;
-    return sub === 0n ? base : `${base} + ${sub} wei`;
+    const sub = (w < 0n ? -w : w) % GEN % 10n ** 12n;
+    if (sub === 0n) return fmtGen(weiStr);
+    const neg = w < 0n ? "-" : "";
+    const whole = (w < 0n ? -w : w) / GEN;
+    return whole === 0n ? `${neg}${sub} wei` : `${neg}${whole} GEN + ${sub} wei`;
   } catch {
     return t(lang, "unconfirmed");
   }

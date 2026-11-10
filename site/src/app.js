@@ -72,13 +72,16 @@ function fmtGen(weiStr) {
 }
 function fmtWei(weiStr) { try { return BigInt(weiStr ?? '0').toString() + ' wei'; } catch { return '—'; } }
 function fmtGenExact(weiStr) {
-  // Like fmtGen, but keeps a sub-6-decimal remainder as "+ N wei" so an
-  // odd-wei pot (e.g. R9's 26 GEN + 1 wei) is never silently rounded away.
+  // Like fmtGen, but a sub-6-decimal remainder is shown as "+ N wei"
+  // instead of being silently truncated — an odd-wei pot (e.g. R9's
+  // 26 GEN + 1 wei) must never read as a round number.
   try {
     const w = BigInt(weiStr ?? '0');
-    const base = fmtGen(weiStr);
-    const sub = (w % GEN) % (10n ** 12n);
-    return sub === 0n ? base : `${base} + ${sub} wei`;
+    const sub = (w < 0n ? -w : w) % GEN % (10n ** 12n);
+    if (sub === 0n) return fmtGen(weiStr);
+    const neg = w < 0n ? '-' : '';
+    const whole = (w < 0n ? -w : w) / GEN;
+    return whole === 0n ? `${neg}${sub} wei` : `${neg}${whole} GEN + ${sub} wei`;
   } catch { return t(lang, 'unconfirmed'); }
 }
 async function sha256Hex(bytes) {
