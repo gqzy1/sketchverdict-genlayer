@@ -134,11 +134,13 @@ h3 { font-size: 1.05rem; }
 details summary { cursor: pointer; font-family: var(--font-display); font-weight: 700; font-size: 1.05rem; margin: 0.4rem 0; }
 details .demo-list { margin-top: 0.6rem; }
 
-/* Rail pool strip: the three header stats, moved to the rail. */
-.pool-strip { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.75rem; text-align: center; }
-.pool-strip > div { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+/* Rail pool strip: the three header stats, moved to the rail. One row per
+   stat (label left, value right) so exact amounts like "26 GEN + 1 wei"
+   fit on a single line instead of wrapping inside a narrow column. */
+.pool-strip { display: flex; flex-direction: column; gap: 0.35rem; }
+.pool-strip > div { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; min-width: 0; }
 .pool-label { font-size: 0.8rem; font-weight: 600; opacity: 0.85; }
-.pool-big { font-family: var(--font-display); font-size: 1.75rem; font-weight: 700; overflow-wrap: anywhere; }
+.pool-big { font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; text-align: right; overflow-wrap: anywhere; }
 
 /* Stage */
 .stage-head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
@@ -220,7 +222,7 @@ details .demo-list { margin-top: 0.6rem; }
 .stamp.teal { border-color: var(--c-teal-match); color: var(--c-teal-match); }
 .stamp.amber { border-color: var(--c-amber-partial); color: var(--c-amber-partial); }
 .stamp.crimson { border-color: var(--c-crimson-miss); color: var(--c-crimson-miss); }
-.stamp-verdict { font-family: var(--font-display); font-size: clamp(1.5rem, 6.5vw, 3.5rem); font-weight: 700; line-height: 1.05; overflow-wrap: anywhere; }
+.stamp-verdict { font-family: var(--font-display); font-size: clamp(1.5rem, 6.5vw, 3rem); font-weight: 700; line-height: 1.05; overflow-wrap: anywhere; }
 .stamp-label { font-size: 0.95rem; }
 .stamp-wrap { margin: 0.8rem 0; }
 .stamp-wrap.animate-in .stamp { animation: stampIn var(--dur-reveal) var(--ease-studio); }

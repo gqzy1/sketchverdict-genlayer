@@ -610,7 +610,9 @@ function verdictStampHTML(round) {
     : vc === 'PARTIAL_WEAK_HALF_ROLLOVER' ? t(lang, 'verdictWeak')
     : vc === 'PARTIAL_WEAK_ZERO_PAYOUT' ? t(lang, 'verdictWeakUnguessed')
     : t(lang, 'verdictMiss');
-  return `<div class="stamp ${tone}"><span class="stamp-verdict">${esc(round.drawing_verdict)}</span><span class="stamp-label">${esc(label)}</span></div>`;
+  // A <wbr> after every underscore: the verdict enum (DRAWING_MATCHES)
+  // may only break at an underscore, never mid-word, on any viewport.
+  return `<div class="stamp ${tone}"><span class="stamp-verdict">${esc(round.drawing_verdict).replaceAll('_', '_<wbr>')}</span><span class="stamp-label">${esc(label)}</span></div>`;
 }
 function potSplitHTML(round) {
   if (!round || round.status !== 'SETTLED') {

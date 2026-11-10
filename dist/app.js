@@ -23576,7 +23576,7 @@ function verdictStampHTML(round) {
   const tone = verdictTone(round);
   const vc = verdictClass(round);
   const label = vc === "FULL_MATCH_SETTLED" ? t(lang, "verdictFull") : vc === "PARTIAL_UNGUESSED_ZERO_PAYOUT" ? t(lang, "verdictPartialUnguessed") : vc === "PARTIAL_WEAK_HALF_ROLLOVER" ? t(lang, "verdictWeak") : vc === "PARTIAL_WEAK_ZERO_PAYOUT" ? t(lang, "verdictWeakUnguessed") : t(lang, "verdictMiss");
-  return `<div class="stamp ${tone}"><span class="stamp-verdict">${esc(round.drawing_verdict)}</span><span class="stamp-label">${esc(label)}</span></div>`;
+  return `<div class="stamp ${tone}"><span class="stamp-verdict">${esc(round.drawing_verdict).replaceAll("_", "_<wbr>")}</span><span class="stamp-label">${esc(label)}</span></div>`;
 }
 function potSplitHTML(round) {
   if (!round || round.status !== "SETTLED") {

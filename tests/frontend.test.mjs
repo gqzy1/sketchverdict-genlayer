@@ -339,9 +339,10 @@ test('redesign: verdict stamp is an event — large display type, overlaying the
   assert.ok(html.includes('id="stamp-overlay"'), 'stamp overlay exists over the canvas');
   assert.ok(html.includes('id="canvas-dim"'), 'reveal curtain (dim) exists');
   assert.ok(css.includes('.stamp-verdict'), 'stamp verdict rule exists');
-  assert.ok(css.includes('3.5rem'), 'stamp verdict reaches 56px (3.5rem)');
+  assert.ok(css.includes('3rem'), 'stamp verdict reaches 48px (3rem) — within the 40–56px brief range');
   const app = read('site/src/app.js');
   assert.ok(app.includes('function renderStampOverlay'), 'stamp renders via its own gated function');
+  assert.ok(app.includes("replaceAll('_', '_<wbr>')"), 'verdict enum breaks only at underscores, never mid-word');
   const soStart = app.indexOf('function renderStampOverlay');
   const soBody = app.slice(soStart, app.indexOf('\nfunction renderCanvasState', soStart));
   assert.ok(soBody.includes("r.status === 'SETTLED'"), 'stamp shows only for a SETTLED round');
