@@ -124,18 +124,24 @@ function encoded(method, args = []) {
   return transactions.serialize([calldata.encode(calldata.makeCalldataObject(method, args, {})), false]);
 }
 async function rpcCall(method, params = []) {
-  for (let attempt = 0; attempt < 6; attempt++) {
+  // A hanging call used to stall the whole refresh for minutes: 60s
+  // timeout x 6 attempts with backoff to 30s. The RPC answers in <1s
+  // when healthy (curl 0.87s), so 20s is 20x headroom and 4 attempts
+  // bound one bad call to ~100s worst case (4x20s + 3s/6s/12s backoff)
+  // instead of several minutes — fast enough for the whole-refresh
+  // retry to actually engage instead of never firing.
+  for (let attempt = 0; attempt < 4; attempt++) {
     let res;
     try {
       res = await fetch(RPC_URL, {
         method: 'POST', headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }),
-        signal: AbortSignal.timeout(60000),
+        signal: AbortSignal.timeout(20000),
       });
-    } catch { await sleep(Math.min(5000 * (attempt + 1), 30000)); continue; }
-    if (!res.ok) { await sleep(Math.min(5000 * (attempt + 1), 30000)); continue; }
+    } catch { await sleep(3000 * (2 ** attempt)); continue; }
+    if (!res.ok) { await sleep(3000 * (2 ** attempt)); continue; }
     let body;
-    try { body = await res.json(); } catch { await sleep(Math.min(5000 * (attempt + 1), 30000)); continue; }
+    try { body = await res.json(); } catch { await sleep(3000 * (2 ** attempt)); continue; }
     if (body.error) throw new Error(body.error.message || JSON.stringify(body.error));
     return body.result;
   }
@@ -179,6 +185,32 @@ async function readJson(functionName, args = []) {
 const READBACK_MAX_ATTEMPTS = 3; // 1 initial attempt + 2 whole-refresh retries
 const READBACK_RETRY_DELAYS_MS = [5000, 15000]; // backoff between attempts
 
+// Progressive rendering: the snapshot is published stage by stage as
+// reads land, through this SINGLE assignment point — never anywhere
+// else. A publish only ever carries data that was actually read back
+// (a partial snapshot has finalized === false), so a refresh that fails
+// before its first successful read leaves the previous snapshot
+// untouched, and the screen always shows the most recent real data.
+function publishSnapshot(next) {
+  snapshot = next;
+  renderAll();
+}
+
+// Bounded-concurrency map: runs fn over items with at most `limit` in
+// flight. The gallery's 10 per-round reads are independent; capping at
+// 4 cuts the gallery stage from ~10 sequential waves to ~3 without an
+// unbounded burst against the rate-limited RPC.
+async function mapLimit(items, limit, fn) {
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      await fn(items[i], i);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+}
+
 async function refreshSnapshot() {
   if (readingBack) return;
   readingBack = true;
@@ -213,43 +245,66 @@ async function refreshSnapshot() {
 }
 
 async function refreshSnapshotOnce() {
+  // Stage by stage, each successful read publishes a growing partial
+  // snapshot (finalized === false until every constituent has landed),
+  // so the page shows room facts within ~1s and gallery cards as their
+  // reads land, instead of waiting for all ~13 calls to finish. A
+  // refresh that throws before its first successful read never reaches
+  // a publish, so the previous snapshot stays untouched.
+  const partial = { room: null, round: null, gallery: null, galleryRounds: {},
+    stats: null, finalized: false, readAt: null, readBackAt: null };
   const roomR = await readJson('get_room_state', []);
+  partial.room = roomR.data;
+  partial.readAt = roomR.readAt;
+  publishSnapshot(partial);
   const galleryR = await readJson('get_gallery', []);
+  partial.gallery = galleryR.data;
+  publishSnapshot(partial);
   const roundId = currentRoundId || roomR.data?.current_round_id || '';
   // Partial readback: the current-round read may fail while room + gallery
-  // succeeded. Do not abort — render room + gallery, leave round null,
+  // succeeded. Do not abort — keep room + gallery, leave round null,
   // and force the snapshot flag false: a failed constituent can never
   // count as FINALIZED, so the marker, the verdict displays and the
   // export gate all stay closed.
-  let roundR = null;
   let roundOk = !roundId;
   if (roundId) {
     try {
-      roundR = await readJson('get_round', [roundId]);
+      const roundR = await readJson('get_round', [roundId]);
+      partial.round = roundR.data;
       roundOk = true;
-    } catch { roundR = null; roundOk = false; }
+      publishSnapshot(partial);
+    } catch { roundOk = false; }
   }
-  const galleryRounds = {};
+  // The gallery's per-round reads are independent: run them with a
+  // bounded concurrency of 4. A card publishes as its own read lands —
+  // its verdict/image come only from that FINALIZED per-round read (see
+  // galleryCard) — and a failed entry simply keeps no card data (as in
+  // round 1); it does not unfinalize the snapshot.
+  const entries = galleryR.data?.entries || [];
+  await mapLimit(entries, 4, async (e) => {
+    try {
+      const rr = await readJson('get_round', [e.round_id]);
+      partial.galleryRounds[e.round_id] = rr.data;
+      publishSnapshot(partial);
+    } catch { /* keep gallery entry without image */ }
+  });
   // The snapshot flag is the AND of every constituent latest-final read
   // envelope — computed from readFinal's stamps only, never asserted here.
   let finalized = roomR.finalized && galleryR.finalized && roundOk;
-  for (const e of galleryR.data?.entries || []) {
-    try {
-      const rr = await readJson('get_round', [e.round_id]);
-      galleryRounds[e.round_id] = rr.data;
-      finalized = finalized && rr.finalized;
-    } catch { /* keep gallery entry without image */ }
-  }
-  let statsR = null;
   if (wallet?.address) {
     try {
-      statsR = await readJson('get_player_stats', [wallet.address.toLowerCase()]);
+      const statsR = await readJson('get_player_stats', [wallet.address.toLowerCase()]);
+      partial.stats = statsR.data;
       finalized = finalized && statsR.finalized;
-    } catch { statsR = null; }
+    } catch { /* keep stats null */ }
   }
-  snapshot = { room: roomR.data, round: roundR ? roundR.data : null, gallery: galleryR.data,
-    galleryRounds, stats: statsR ? statsR.data : null, finalized,
-    readAt: roomR.readAt, readBackAt: roomR.readAt };
+  partial.finalized = finalized;
+  // readBackAt is when this snapshot was ASSEMBLED, not when the first
+  // read landed — the marker must not claim a time minutes before the
+  // data was actually complete. Each single read's readAt envelope value
+  // is untouched.
+  partial.readBackAt = new Date().toISOString();
+  publishSnapshot(partial);
   const fired = await maybeAutoReveal();
   if (fired) setTimeout(() => refreshSnapshot(), 5000); // re-read after the auto-reveal settles
 }

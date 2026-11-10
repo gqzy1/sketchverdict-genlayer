@@ -86,11 +86,14 @@ test('Gate 11 structural: the finalized flag is stamped only inside readFinal', 
   const rjEnd = app.indexOf('async function refreshSnapshot', rjStart);
   assert.ok(app.slice(rjStart, rjEnd).includes('finalized: r.finalized'),
     'readJson threads readFinal’s flag, it does not stamp its own');
-  // The snapshot carries the threaded flag; the export consumes it.
-  const snapStart = app.indexOf('snapshot = { room:');
+  // The snapshot is assembled as the `partial` object (published stage
+  // by stage through publishSnapshot) and carries the threaded flag.
+  const snapStart = app.indexOf('const partial = { room:');
   assert.ok(snapStart !== -1, 'snapshot assembly found');
   assert.ok(app.slice(snapStart, snapStart + 400).includes('finalized'),
     'snapshot carries the threaded finalized flag');
+  assert.ok(app.includes('partial.finalized = finalized;'),
+    'the assembled snapshot takes the AND of the constituent flags');
   assert.ok(app.includes('finalized: snapshot.finalized'),
     'exportRoundDossier consumes snapshot.finalized');
   const exStart = app.indexOf('function exportRoundDossier');
@@ -424,7 +427,7 @@ test('readback resilience: partial render — round failure keeps room + gallery
   const onceEnd = app.indexOf('async function maybeAutoReveal', onceStart);
   const once = app.slice(onceStart, onceEnd);
   // The current-round read is wrapped: its failure must not abort the refresh.
-  const roundSlice = once.slice(once.indexOf('const roundId'), once.indexOf('const galleryRounds'));
+  const roundSlice = once.slice(once.indexOf('const roundId'), once.indexOf('const entries'));
   assert.ok(roundSlice.includes('try {'), 'current-round read is guarded');
   assert.ok(roundSlice.includes("readJson('get_round'"), 'guarded read is the current round');
   assert.ok(roundSlice.includes('catch'), 'round failure is caught, not thrown');
@@ -433,8 +436,12 @@ test('readback resilience: partial render — round failure keeps room + gallery
   // forces it false, so the marker, verdict displays and export stay closed.
   assert.ok(once.includes('let finalized = roomR.finalized && galleryR.finalized && roundOk'),
     'finalized AND includes the round-ok flag');
-  assert.ok(once.includes('round: roundR ? roundR.data : null'),
-    'a failed round read leaves round null in the snapshot');
+  // The partial snapshot starts with round null and only the successful
+  // read assigns it, so a failed round read leaves round null.
+  assert.ok(once.includes('round: null,'), 'partial snapshot starts with round null');
+  assert.ok(once.includes('partial.round = roundR.data;'), 'round is assigned only on a successful read');
+  const catchSlice = roundSlice.slice(roundSlice.indexOf('catch'));
+  assert.ok(!catchSlice.includes('partial.round ='), 'the catch path never assigns round');
   // Room facts render from a successful get_room_state, not only behind
   // the full-readback gate.
   const roomStart = app.indexOf('function renderRoom()');
@@ -478,6 +485,84 @@ test('readback resilience: a failed refresh never clears the last good snapshot 
   // by the i18n test, but the content must actually say retrying).
   assert.ok(t('zh', 'readbackRetrying').includes('重试'), 'zh retrying text');
   assert.ok(t('en', 'readbackRetrying').toLowerCase().includes('retry'), 'en retrying text');
+});
+
+test('readback round 2: rpcCall fails fast — 20s timeout, 4 attempts, 3s/6s/12s backoff', () => {
+  const app = read('site/src/app.js');
+  const rpcStart = app.indexOf('async function rpcCall');
+  const rpcEnd = app.indexOf('async function readFinal', rpcStart);
+  assert.ok(rpcStart !== -1 && rpcEnd !== -1, 'rpcCall found');
+  const rpc = app.slice(rpcStart, rpcEnd);
+  assert.ok(rpc.includes('AbortSignal.timeout(20000)'), 'per-call timeout is 20s, not 60s');
+  assert.ok(rpc.includes('attempt < 4'), 'at most 4 attempts per call');
+  assert.ok(!rpc.includes('attempt < 6'), 'the old 6-attempt loop is gone');
+  assert.ok(!rpc.includes('AbortSignal.timeout(60000)'), 'the old 60s timeout is gone');
+  assert.ok(rpc.includes('3000 * (2 ** attempt)'), 'backoff is ~3s/6s/12s');
+  // Worst case per call: 4x20s + 3s + 6s + 12s = ~101s, so a hanging
+  // call can no longer stall a refresh for several minutes, and the
+  // whole-refresh retry actually gets a chance to engage.
+});
+
+test('readback round 2: progressive rendering — each stage publishes its partial snapshot', () => {
+  const app = read('site/src/app.js');
+  // One assignment point only: publishSnapshot. The single-attempt path
+  // never writes `snapshot =` directly (the "never clears" test counts
+  // exactly one such line in the whole file).
+  assert.ok(app.includes('function publishSnapshot(next)'), 'publishSnapshot helper exists');
+  const onceStart = app.indexOf('async function refreshSnapshotOnce');
+  const onceEnd = app.indexOf('async function maybeAutoReveal', onceStart);
+  const once = app.slice(onceStart, onceEnd);
+  assert.ok(!once.includes('snapshot ='), 'refreshSnapshotOnce never assigns snapshot directly');
+  const publishes = once.split('publishSnapshot(partial)').length - 1;
+  assert.ok(publishes >= 4, 'publishes after room, gallery, round/entry and at the end: ' + publishes);
+  // Partials carry finalized false until every constituent has landed.
+  assert.ok(once.includes('finalized: false'), 'partial snapshot starts unfinalized');
+  // Stage order: room publishes before gallery is read; gallery publishes
+  // before the per-entry reads; cards publish before the final assembly.
+  assert.ok(once.indexOf('partial.room = roomR.data;') < once.indexOf("readJson('get_gallery'"),
+    'room publishes before the gallery read starts');
+  assert.ok(once.indexOf('partial.gallery = galleryR.data;') < once.indexOf('mapLimit(entries, 4,'),
+    'gallery publishes before the per-entry reads start');
+  assert.ok(once.indexOf('partial.galleryRounds[e.round_id] = rr.data;') < once.indexOf('partial.finalized = finalized;'),
+    'cards publish before the final assembly');
+  // Verdict displays still gate on the full readback: the stamp/canvas
+  // reads snapshot.round only through readbackOk().
+  assert.ok(app.includes('const r = readbackOk() ? snapshot.round : null'),
+    'round-derived displays still gate on readbackOk()');
+});
+
+test('readback round 2: gallery reads run with bounded concurrency 4', () => {
+  const app = read('site/src/app.js');
+  assert.ok(app.includes('async function mapLimit(items, limit, fn)'), 'mapLimit helper exists');
+  const mlStart = app.indexOf('async function mapLimit');
+  const mlEnd = app.indexOf('async function refreshSnapshot', mlStart);
+  const ml = app.slice(mlStart, mlEnd);
+  assert.ok(ml.includes('Math.min(limit, items.length)'), 'workers are capped by the limit');
+  assert.ok(ml.includes('await fn(items[i], i)'), 'each item runs through fn');
+  const onceStart = app.indexOf('async function refreshSnapshotOnce');
+  const onceEnd = app.indexOf('async function maybeAutoReveal', onceStart);
+  const once = app.slice(onceStart, onceEnd);
+  assert.ok(once.includes('mapLimit(entries, 4,'), 'gallery entries run with concurrency 4');
+  assert.ok(!once.includes('for (const e of'), 'no sequential gallery loop remains');
+  assert.ok(!once.includes('Promise.all(entries'), 'no unbounded burst over the entries');
+});
+
+test('readback round 2: marker time is the snapshot assembly time, not the first read', () => {
+  const app = read('site/src/app.js');
+  const onceStart = app.indexOf('async function refreshSnapshotOnce');
+  const onceEnd = app.indexOf('async function maybeAutoReveal', onceStart);
+  const once = app.slice(onceStart, onceEnd);
+  // readBackAt is stamped at assembly, after the gallery and stats stages.
+  assert.ok(once.includes('partial.readBackAt = new Date().toISOString();'),
+    'readBackAt is stamped at assembly time');
+  assert.ok(once.indexOf('mapLimit(entries, 4,') < once.indexOf('partial.readBackAt = new Date().toISOString();'),
+    'readBackAt is stamped after the gallery stage');
+  assert.ok(once.indexOf('partial.finalized = finalized;') < once.indexOf('partial.readBackAt = new Date().toISOString();'),
+    'readBackAt is stamped after the flag is computed');
+  // The stale load-time stamp is gone: nothing assigns roomR.readAt as readBackAt.
+  assert.ok(!app.includes('readBackAt: roomR.readAt'), 'readBackAt no longer takes the first read’s time');
+  // Each single read's readAt envelope value is untouched.
+  assert.ok(once.includes('partial.readAt = roomR.readAt;'), 'room readAt envelope is kept');
 });
 
 test('read path smoke: gen_call latest-final against the live evidence contract (read-only)', async () => {
