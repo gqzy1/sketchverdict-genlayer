@@ -364,6 +364,15 @@ test('redesign: ?static kills motion but leaves every content visible', () => {
   assert.ok(read('index.html').includes('id="static-toggle"'), 'static toggle remains on the page');
 });
 
+test('redesign: stylesheet is versioned by its own content hash (no stale CSS)', () => {
+  const html = read('index.html');
+  const m = html.match(/href="dist\/styles\.css\?v=([0-9a-f]{12})"/);
+  assert.ok(m, 'stylesheet link carries ?v=');
+  const css = read('dist/styles.css');
+  const expect = crypto.createHash('sha256').update(css).digest('hex').slice(0, 12);
+  assert.equal(m[1], expect, 'stylesheet ?v= is the first 12 hex of dist/styles.css SHA-256');
+});
+
 test('redesign: exactly 6 colors, 3 fonts, CSS-only paper texture', () => {
   const css = read('site/src/styles.css');
   const allowed = new Set(['#111927', '#F4F6FA', '#1D4ED8', '#0F766E', '#B45309', '#B91C1C']);

@@ -3,9 +3,11 @@
 // - esbuild bundles site/src/app.js (genlayer-js 1.1.8) -> dist/app.js
 // - copies site/src/styles.css -> dist/styles.css
 // - copies site/src/assets/*.b64 (demo drawings) -> dist/assets/
-// - stamps ?v=<sha256 of dist/app.js, first 12 hex> onto the <script> tag in
-//   index.html so a stale cached bundle can never produce a false cold-start
-//   failure (the A1/A3 lesson).
+// - stamps ?v=<sha256 of dist/app.js, first 12 hex> onto the <script> tag and
+//   ?v=<sha256 of dist/styles.css, first 12 hex> onto the <link> tag in
+//   index.html so a stale cached bundle or stylesheet can never produce a
+//   false cold-start failure (the A1/A3 lesson). Each file is versioned by
+//   its own content hash, so a CSS-only change still busts the cache.
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import * as esbuild from 'esbuild';
@@ -26,10 +28,15 @@ for (const f of fs.readdirSync('site/src/assets')) {
 }
 const bundle = fs.readFileSync('dist/app.js');
 const v = crypto.createHash('sha256').update(bundle).digest('hex').slice(0, 12);
+const css = fs.readFileSync('dist/styles.css');
+const vc = crypto.createHash('sha256').update(css).digest('hex').slice(0, 12);
 const html = fs.readFileSync('index.html', 'utf8');
-const stamped = html.replace(
+let stamped = html.replace(
   /src="dist\/app\.js(\?v=[0-9a-f]+)?"/,
   `src="dist/app.js?v=${v}"`);
+stamped = stamped.replace(
+  /href="dist\/styles\.css(\?v=[0-9a-f]+)?"/,
+  `href="dist/styles.css?v=${vc}"`);
 if (stamped === html) throw new Error('script tag not found in index.html');
 fs.writeFileSync('index.html', stamped);
-console.log('site built: dist/app.js, dist/styles.css, dist/assets/, ?v=' + v);
+console.log('site built: dist/app.js, dist/styles.css, dist/assets/, ?v=' + v + ' css?v=' + vc);

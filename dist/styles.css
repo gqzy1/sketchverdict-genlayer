@@ -220,7 +220,7 @@ details .demo-list { margin-top: 0.6rem; }
 .stamp.teal { border-color: var(--c-teal-match); color: var(--c-teal-match); }
 .stamp.amber { border-color: var(--c-amber-partial); color: var(--c-amber-partial); }
 .stamp.crimson { border-color: var(--c-crimson-miss); color: var(--c-crimson-miss); }
-.stamp-verdict { font-family: var(--font-display); font-size: clamp(2rem, 8vw, 3.5rem); font-weight: 700; line-height: 1.05; overflow-wrap: anywhere; }
+.stamp-verdict { font-family: var(--font-display); font-size: clamp(1.5rem, 6.5vw, 3.5rem); font-weight: 700; line-height: 1.05; overflow-wrap: anywhere; }
 .stamp-label { font-size: 0.95rem; }
 .stamp-wrap { margin: 0.8rem 0; }
 .stamp-wrap.animate-in .stamp { animation: stampIn var(--dur-reveal) var(--ease-studio); }
