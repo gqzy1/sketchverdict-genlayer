@@ -345,6 +345,12 @@ let presetLoaded = null;
 // the canvas re-encode.
 let canvasContent = 'blank';
 let demoOriginal = null; // { id, sha, bytes, b64 } while a demo is loaded
+// 'round' = the latest round's on-chain image, auto-loaded verbatim after a
+// FINALIZED readback (brief §八). roundOriginal holds its verified bytes /
+// SHA so the panel shows the on-chain identity, never a re-encode.
+let roundOriginal = null; // { roundId, sha, bytes, b64 } while a round image is auto-loaded
+let autoLoadedRound = null; // round_id whose image is currently on the canvas
+let autoLoadPending = null; // round_id currently being verified / drawn
 
 function initCanvas() {
   canvas = $('#draw-canvas');
@@ -400,6 +406,8 @@ function clearCanvas() {
   presetLoaded = null;
   canvasContent = 'blank';
   demoOriginal = null;
+  roundOriginal = null;
+  autoLoadedRound = null;
   updateExport();
 }
 function canvasToBlob() {
@@ -414,6 +422,15 @@ async function updateExport() {
     currentImageBytes = b64decode(demoOriginal.b64);
     currentImageB64 = demoOriginal.b64;
     currentImageSha = demoOriginal.sha;
+    renderCanvasMeta();
+    return;
+  }
+  // An auto-loaded round image also keeps its EXACT on-chain bytes: the
+  // canvas is only a visual preview of those bytes.
+  if (canvasContent === 'round' && roundOriginal) {
+    currentImageBytes = b64decode(roundOriginal.b64);
+    currentImageB64 = roundOriginal.b64;
+    currentImageSha = roundOriginal.sha;
     renderCanvasMeta();
     return;
   }
@@ -443,6 +460,15 @@ function renderCanvasMeta() {
     $('#image-bytes').textContent = String(demoOriginal.bytes);
     $('#b64-size').textContent = String(demoOriginal.b64.length);
     if (preset) preset.textContent = `${t(lang, 'canvasPresetDemo')} · ${demoOriginal.id}`;
+    return;
+  }
+  if (canvasContent === 'round' && roundOriginal) {
+    // The auto-loaded round image shows its verified ORIGINAL on-chain SHA
+    // and round label — the canvas is only a visual preview of those bytes.
+    $('#image-sha').textContent = roundOriginal.sha;
+    $('#image-bytes').textContent = String(roundOriginal.bytes);
+    $('#b64-size').textContent = String(roundOriginal.b64.length);
+    if (preset) preset.textContent = `${t(lang, 'canvasPresetRound')} · ${roundOriginal.roundId}`;
     return;
   }
   $('#image-sha').textContent = currentImageSha || t(lang, 'unconfirmed');
@@ -488,6 +514,46 @@ async function loadDemoCase(c) {
     await updateExport();
     setNotice(`${t(lang, 'demoLoaded')} — ${t(lang, 'demoShaMatch')}`, 'ok');
   } catch (e) { setNotice(`${t(lang, 'txError')} (${e.message})`, 'error'); }
+}
+
+async function autoLoadRoundImage(r) {
+  // Brief §八: after a FINALIZED readback, if the latest round carries an
+  // on-chain image, show its EXACT bytes on the main canvas so the stage is
+  // never a blank sheet. Never clobber user strokes or a loaded demo; never
+  // display a hash that was not verified against the round's own
+  // image_sha256; a round with no image leaves the canvas blank (and clears
+  // a stale auto-loaded image when the displayed round changes).
+  if ((!r || !r.image_b64 || !r.image_sha256) && canvasContent === 'round'
+    && autoLoadedRound !== r?.round_id) {
+    clearCanvas();
+    return;
+  }
+  if (!r || !r.image_b64 || !r.image_sha256) return;
+  if (canvasContent === 'drawn' || canvasContent === 'demo') return;
+  if (autoLoadedRound === r.round_id || autoLoadPending === r.round_id) return;
+  autoLoadPending = r.round_id;
+  try {
+    const bytes = b64decode(r.image_b64);
+    const sha = await sha256Hex(bytes);
+    if (sha !== r.image_sha256) return; // never display an unverified image
+    const blob = new Blob([bytes], { type: 'image/png' });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = url; });
+    URL.revokeObjectURL(url);
+    // The round may have changed while the image decoded — only paint if
+    // this is still the current round and the canvas is still untouched.
+    if (snapshot?.round?.round_id !== r.round_id) return;
+    if (canvasContent === 'drawn' || canvasContent === 'demo') return;
+    ctx.fillStyle = PAPER;
+    ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    ctx.drawImage(img, 0, 0, CANVAS_SIZE, CANVAS_SIZE);
+    canvasContent = 'round';
+    roundOriginal = { roundId: r.round_id, sha: r.image_sha256, bytes: bytes.length, b64: r.image_b64 };
+    autoLoadedRound = r.round_id;
+    await updateExport();
+  } catch { /* image undecodable — leave the canvas blank */ }
+  finally { if (autoLoadPending === r.round_id) autoLoadPending = null; }
 }
 
 // ------------------------------------------------------------------
@@ -582,16 +648,16 @@ function renderRoom() {
   const rid = live ? (snapshot.round?.round_id || room?.current_round_id || '') : '';
   $('#round-id-display').textContent = rid || t(lang, 'unconfirmed');
   if (rid && !currentRoundId) { currentRoundId = rid; $('#round-id').value = rid; }
-  // Pipeline: stage names render only after a FINALIZED readback; before
-  // that every step shows UNCONFIRMED so no stage/verdict string is ever
-  // pre-claimed.
+  // Progress dots under the canvas: stage names render only after a
+  // FINALIZED readback; before that every step shows UNCONFIRMED so no
+  // stage/verdict string is ever pre-claimed.
   const stage = live ? (snapshot.round?.status || '') : '';
   const stages = ['DRAWING', 'GUESSING', 'JUDGED', 'SETTLED'];
   $('#pipeline').innerHTML = stages.map((s, i) => {
     const active = stage === s;
     const label = live ? `${i + 1}. ${s}` : `${i + 1}. ${t(lang, 'unconfirmed')}`;
-    return `<span class="pipe-step${active ? ' active' : ''}">${esc(label)}</span>`;
-  }).join('<span class="pipe-arrow">→</span>');
+    return `<span class="pipe-step${active ? ' active' : ''}"><i class="dot"></i><span>${esc(label)}</span></span>`;
+  }).join('');
   const pot = live ? snapshot.round : null;
   $('#pool-current').textContent = pot?.total_pot_wei ? fmtGenExact(pot.total_pot_wei) : t(lang, 'dashUnconfirmed');
 }
@@ -618,6 +684,21 @@ function renderConsole() {
   $('#vault-round').textContent = vault ? vault.roundId : '—';
   updateTimeoutButton();
 }
+function renderStampOverlay(r) {
+  // The verdict stamp lives on the canvas as an event, not a table row. It
+  // renders only from a FINALIZED SETTLED round (r is already gated by
+  // readbackOk() in renderCanvasState); anything else leaves the overlay
+  // empty so no verdict is ever pre-claimed. The dim is the reveal curtain:
+  // it appears with the stamp, over the same 420ms, and statically with
+  // ?static (durations 0).
+  const overlay = $('#stamp-overlay');
+  const dim = $('#canvas-dim');
+  const show = !!r && r.status === 'SETTLED' && !!r.drawing_verdict;
+  if (dim) dim.classList.toggle('on', show);
+  if (!overlay) return;
+  if (!show) { overlay.innerHTML = ''; return; }
+  overlay.innerHTML = `<div class="stamp-wrap${!staticMode ? ' animate-in' : ''}">${verdictStampHTML(r)}</div>`;
+}
 function renderCanvasState() {
   const r = readbackOk() ? snapshot.round : null;
   const locked = !!r && r.status !== 'DRAWING';
@@ -625,9 +706,10 @@ function renderCanvasState() {
   $('#canvas-state').textContent = !readbackOk() ? t(lang, 'unconfirmed')
     : locked ? t(lang, 'canvasReadonly') : t(lang, 'canvasActive');
   renderCanvasMeta();
+  renderStampOverlay(r);
   const stage = $('#reveal-stage');
   if (!r) {
-    stage.innerHTML = `<p class="reveal-wait">${esc(t(lang, 'revealWaiting'))}</p>${verdictStampHTML(null)}`;
+    stage.innerHTML = `<p class="reveal-wait">${esc(t(lang, 'revealWaiting'))}</p>`;
     return;
   }
   const checks = [
@@ -637,12 +719,14 @@ function renderCanvasState() {
   ];
   stage.innerHTML = `
     <dl class="checks">${checks.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd class="mono">${esc(v)}</dd></div>`).join('')}</dl>
-    <div class="stamp-wrap${r.status === 'SETTLED' && !staticMode ? ' animate-in' : ''}">${verdictStampHTML(r)}</div>
     <dl class="reveal-facts">
       <div><dt>${esc(t(lang, 'verdictLabel'))}</dt><dd class="mono">${esc(r.drawing_verdict || t(lang, 'unconfirmed'))}</dd></div>
       <div><dt>${esc(t(lang, 'reasonLabel'))}</dt><dd class="mono">${esc(r.reason_code || t(lang, 'pendingReadback'))}</dd></div>
       <div><dt>${esc(t(lang, 'fastestGuesser'))}</dt><dd class="mono">${esc(r.fastest_guesser ? shortAddr(r.fastest_guesser) : t(lang, 'unconfirmed'))}</dd></div>
     </dl>`;
+  // Brief §八: after the FINALIZED readback, the latest round's on-chain
+  // image auto-loads onto the main canvas (exact bytes, SHA verified).
+  autoLoadRoundImage(r);
 }
 function renderGuesses() {
   const box = $('#guess-stream');
@@ -650,7 +734,9 @@ function renderGuesses() {
   if (!r) { box.innerHTML = `<p class="empty">${esc(t(lang, 'unconfirmedLong'))}</p>`; return; }
   const guesses = [...(r.guesses || [])].sort((a, b) => a.seq_no - b.seq_no);
   if (!guesses.length) { box.innerHTML = `<p class="empty">${esc(t(lang, 'noGuesses'))}</p>`; return; }
-  box.innerHTML = guesses.map((g) => {
+  // The rail shows the latest 5 guesses, compact; the count stays the total.
+  const latest = guesses.slice(-5);
+  box.innerHTML = latest.map((g) => {
     const badge = !g.verdict ? t(lang, 'guessPending')
       : g.verdict === 'GUESS_CORRECT' ? t(lang, 'guessCorrect') : t(lang, 'guessWrong');
     const cls = !g.verdict ? 'unconfirmed' : g.verdict === 'GUESS_CORRECT' ? 'correct' : 'wrong';
@@ -869,6 +955,7 @@ async function onStartRound() {
   const commit = await sha256Hex(new TextEncoder().encode(`${salt}|${concept}`));
   vault = { roundId, concept, salt };
   currentRoundId = roundId;
+  clearCanvas(); // a new round starts on blank paper, never on the last round's image
   renderConsole();
   await runWrite(t(lang, 'startRound'), 'start_round', [roundId, commit, category, drawMin, guessMin], 10n * GEN);
 }
@@ -970,9 +1057,11 @@ function bindEvents() {
   $$('.mobile-tab').forEach((b) => b.addEventListener('click', () => {
     $$('.mobile-tab').forEach((x) => x.classList.toggle('active', x === b));
     const tab = b.dataset.mtab;
-    $('#col-left').classList.toggle('mtab-hidden', tab !== 'console' && tab !== 'canvas');
-    $('#col-centre').classList.toggle('mtab-hidden', tab !== 'canvas');
-    $('#col-right').classList.toggle('mtab-hidden', tab !== 'guesses');
+    // Mobile: the stage (canvas + guess dock) is the first screen; the rail
+    // (facts, money, stream, wallet, play forms) is the guesses tab; the
+    // deck (gallery / evidence) is the gallery / evidence tabs.
+    $('#stage-col').classList.toggle('mtab-hidden', tab !== 'canvas');
+    $('#rail-col').classList.toggle('mtab-hidden', tab !== 'guesses');
     $('#deck').classList.toggle('mtab-hidden', tab !== 'gallery' && tab !== 'evidence');
     if (tab === 'gallery' || tab === 'evidence') {
       galleryTab = tab;

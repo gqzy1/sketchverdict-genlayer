@@ -225,11 +225,12 @@ test('amounts render exact wei (odd-wei pots are never rounded away)', () => {
   }
 });
 
-test('mobile: room grid items may shrink (375px must not scroll horizontally)', () => {
+test('mobile: stage-layout grid items may shrink (375px must not scroll horizontally)', () => {
   const css = read('site/src/styles.css');
-  assert.ok(css.includes('.room > div'), 'room children rule present');
-  const rule = css.slice(css.indexOf('.room > div'));
-  assert.ok(rule.includes('min-width: 0'), 'room grid children must allow shrinking below min-content');
+  assert.ok(css.includes('.stage-layout > *'), 'stage-layout children rule present');
+  const rule = css.slice(css.indexOf('.stage-layout > *'));
+  assert.ok(rule.includes('min-width: 0'), 'stage-layout children must allow shrinking below min-content');
+  assert.ok(css.includes('min(100%, 384px)'), 'mobile canvas is min(100%, 384px)');
 });
 
 test('Gate 11 static: index.html has full contract address, no dead address, no verdict claims', () => {
@@ -261,6 +262,122 @@ test('reads pinned to latest-final in app.js', () => {
   assert.ok(!src.includes('latest-nonfinal'), 'no nonfinal reads');
   assert.ok(src.includes('✓ Read from FINALIZED Studionet state'), 'readback marker text present');
   assert.ok(src.includes('0x56C85764c91F439185f446e019BB70A877458b54'), 'contract address in bundle source');
+});
+
+test('redesign: slim one-line header — name + LIVE + round only', () => {
+  const html = read('index.html');
+  const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
+  assert.ok(header.includes('data-i18n="title"'), 'header keeps the name');
+  assert.ok(header.includes('id="readback-marker"'), 'header keeps the LIVE readback marker');
+  assert.ok(header.includes('id="round-id-display"'), 'header keeps the round id');
+  for (const gone of ['id="pool-current"', 'id="pool-rollover"', 'id="round-count"',
+    'id="btn-connect"', 'id="btn-temp"', 'id="btn-disconnect"',
+    'id="lang-toggle"', 'id="static-toggle"']) {
+    assert.ok(!header.includes(gone), 'header must not contain ' + gone);
+  }
+  // The moved items still exist on the page (rail / footer), just not in the header.
+  for (const kept of ['id="pool-current"', 'id="pool-rollover"', 'id="round-count"',
+    'id="btn-connect"', 'id="btn-temp"', 'id="lang-toggle"', 'id="static-toggle"']) {
+    assert.ok(html.includes(kept), kept + ' must remain reachable on the page');
+  }
+});
+
+test('redesign: stage-first layout — 640px paper canvas, guess dock under it, rail at the side', () => {
+  const html = read('index.html');
+  const css = read('site/src/styles.css');
+  assert.ok(html.includes('id="stage-col"'), 'stage column exists');
+  assert.ok(html.includes('id="rail-col"'), 'side rail exists');
+  assert.ok(css.includes('max-width: 720px'), 'stage max-width ~720px');
+  assert.ok(css.includes('min(100%, 640px)'), 'desktop canvas displays at 640px');
+  assert.ok(css.includes('0 12px 40px rgba(17, 25, 39, 0.18)') || css.includes('0 12px 40px rgba(17,25,39,.18)'),
+    'canvas carries the paper-sheet shadow');
+  // Guess dock sits directly under the canvas, before the progress dots.
+  assert.ok(html.indexOf('id="draw-canvas"') < html.indexOf('id="guess-input"'),
+    'canvas precedes the guess input');
+  assert.ok(html.indexOf('id="guess-input"') < html.indexOf('id="pipeline"'),
+    'guess dock sits directly under the canvas, before the progress dots');
+  // Deck (gallery + evidence) is below the fold: after the stage layout.
+  assert.ok(html.indexOf('id="deck"') > html.indexOf('id="rail-col"'),
+    'deck comes after the stage + rail');
+});
+
+test('redesign: the 14 readback fields are all reachable somewhere on the page', () => {
+  const html = read('index.html');
+  const fields = ['round-id-display', 'pool-rollover', 'pool-current', 'round-count',
+    'c-status', 'c-commit', 'c-category', 'c-draw-deadline', 'c-reveal-deadline',
+    'c-challenge-deadline', 'c-concept', 'c-cheat', 'c-tier', 'image-sha'];
+  assert.equal(fields.length, 14, 'the mapping is 14 fields');
+  for (const id of fields) {
+    assert.ok(html.includes(`id="${id}"`), 'readback field missing from the page: ' + id);
+  }
+});
+
+test('redesign: canvas auto-loads the latest round on-chain image after FINALIZED readback', () => {
+  const app = read('site/src/app.js');
+  assert.ok(app.includes('async function autoLoadRoundImage'), 'auto-load function exists');
+  assert.ok(app.includes("sha !== r.image_sha256"), 'image SHA is verified before display');
+  assert.ok(app.includes("canvasContent === 'drawn' || canvasContent === 'demo'"),
+    'auto-load never clobbers user strokes or a loaded demo');
+  assert.ok(app.includes("canvasContent = 'round'"), 'auto-loaded image is a distinct canvas state');
+  assert.ok(app.includes('roundOriginal'), 'auto-loaded image keeps its verified original bytes');
+  const cmStart = app.indexOf('function renderCanvasMeta');
+  const cmBody = app.slice(cmStart, app.indexOf('\nfunction ', cmStart + 10));
+  assert.ok(cmBody.includes("canvasContent === 'round'"), 'canvas meta has a round branch');
+  assert.ok(cmBody.includes("t(lang, 'canvasPresetRound')"), 'auto-loaded image is labelled with its round');
+  assert.ok(app.includes("canvasContent === 'round' && roundOriginal"),
+    'an auto-loaded round submits its exact on-chain bytes, not a re-encode');
+  // renderCanvasState triggers the auto-load only from a FINALIZED round.
+  const rcStart = app.indexOf('function renderCanvasState');
+  const rcBody = app.slice(rcStart, app.indexOf('\nfunction renderStampOverlay', rcStart) === -1
+    ? app.indexOf('\nfunction renderGuesses', rcStart) : app.indexOf('\nfunction renderStampOverlay', rcStart));
+  assert.ok(rcBody.includes('autoLoadRoundImage(r)'), 'renderCanvasState triggers the auto-load');
+});
+
+test('redesign: verdict stamp is an event — large display type, overlaying the dimmed canvas', () => {
+  const css = read('site/src/styles.css');
+  const html = read('index.html');
+  assert.ok(html.includes('id="stamp-overlay"'), 'stamp overlay exists over the canvas');
+  assert.ok(html.includes('id="canvas-dim"'), 'reveal curtain (dim) exists');
+  assert.ok(css.includes('.stamp-verdict'), 'stamp verdict rule exists');
+  assert.ok(css.includes('3.5rem'), 'stamp verdict reaches 56px (3.5rem)');
+  const app = read('site/src/app.js');
+  assert.ok(app.includes('function renderStampOverlay'), 'stamp renders via its own gated function');
+  const soStart = app.indexOf('function renderStampOverlay');
+  const soBody = app.slice(soStart, app.indexOf('\nfunction renderCanvasState', soStart));
+  assert.ok(soBody.includes("r.status === 'SETTLED'"), 'stamp shows only for a SETTLED round');
+  assert.ok(soBody.includes('verdictStampHTML(r)'), 'stamp content comes from the verdict');
+});
+
+test('redesign: ?static kills motion but leaves every content visible', () => {
+  const css = read('site/src/styles.css');
+  const staticBlock = css.slice(css.indexOf('html.static-mode'), css.indexOf('}', css.indexOf('html.static-mode')) + 1);
+  assert.ok(staticBlock.includes('--dur-reveal: 0ms'), 'static mode zeroes the reveal duration');
+  assert.ok(staticBlock.includes('--dur-tap: 0ms'), 'static mode zeroes the tap duration');
+  assert.ok(!staticBlock.includes('display'), 'static mode hides nothing');
+  assert.ok(!staticBlock.includes('visibility'), 'static mode hides nothing');
+  assert.ok(!staticBlock.includes('opacity'), 'static mode hides nothing');
+  // The stamp overlay never sits at opacity 0 by default (only the
+  // decorative curtain dims, and it is not content).
+  const ovStart = css.indexOf('.stamp-overlay');
+  const ovRule = css.slice(ovStart, css.indexOf('}', ovStart));
+  assert.ok(!ovRule.includes('opacity'), 'stamp overlay is never invisible by default');
+  assert.ok(read('index.html').includes('id="static-toggle"'), 'static toggle remains on the page');
+});
+
+test('redesign: exactly 6 colors, 3 fonts, CSS-only paper texture', () => {
+  const css = read('site/src/styles.css');
+  const allowed = new Set(['#111927', '#F4F6FA', '#1D4ED8', '#0F766E', '#B45309', '#B91C1C']);
+  const found = css.match(/#[0-9a-fA-F]{6}/g) || [];
+  assert.ok(found.length > 0, 'colors present');
+  for (const c of found) {
+    assert.ok(allowed.has(c.toUpperCase()) || [...allowed].some((a) => a.toUpperCase() === c.toUpperCase()),
+      'color outside the 6-token palette: ' + c);
+  }
+  assert.ok(!css.includes('url(http://') && !css.includes('url(https://'),
+    'no external image assets in the stylesheet');
+  assert.ok(css.includes('data:image/svg+xml'), 'paper grain is an inline SVG data URI');
+  assert.ok(css.includes('--font-display') && css.includes('--font-sans') && css.includes('--font-mono'),
+    'three font tokens present');
 });
 
 test('read path smoke: gen_call latest-final against the live evidence contract (read-only)', async () => {

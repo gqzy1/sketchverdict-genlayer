@@ -12,29 +12,14 @@
 </head>
 <body>
 <header class="topbar">
-  <div>
-    <h1 data-i18n="title">SketchVerdict · 绘画猜谜派对</h1>
-    <p class="subtitle" data-i18n="subtitle">画出秘密概念，等别人猜中——共识裁决画作，确定性代码分账。</p>
-  </div>
-  <div class="pools">
-    <span><span data-i18n="roundLabel">轮次</span> <strong id="round-id-display" class="mono">未确认</strong></span>
-    <span><span data-i18n="rolloverPool">滚存奖池</span> <span class="big" id="pool-rollover">—（未确认）</span></span>
-    <span><span data-i18n="currentPot">本轮奖池</span> <span class="big" id="pool-current">—（未确认）</span></span>
-    <span><span data-i18n="roundCount">轮次总数</span> <span class="mono" id="round-count">—（未确认）</span></span>
-  </div>
-  <div class="wallet-bar">
+  <h1 data-i18n="title">SketchVerdict · 绘画猜谜派对</h1>
+  <div class="topbar-right">
     <span class="live-badge"><span data-i18n="live">LIVE</span> · <span id="readback-marker">未确认 · 等待 FINALIZED 读回</span></span>
-    <button id="lang-toggle" type="button">EN</button>
-    <button id="static-toggle" type="button">静态模式：OFF</button>
-    <span id="wallet-capsule" class="mono">未确认</span>
-    <button id="btn-connect" type="button" data-i18n="connectInjected">连接注入钱包（OKX / MetaMask / Rabby / Coinbase）</button>
-    <button id="btn-temp" type="button" data-i18n="useTempSigner">启用浏览器临时签名器</button>
-    <button id="btn-disconnect" type="button" data-i18n="disconnect">断开</button>
+    <span class="header-round"><span data-i18n="roundLabel">轮次</span> <strong id="round-id-display" class="mono">未确认</strong></span>
   </div>
 </header>
 <div id="offline-banner" data-i18n="offlineBanner">本地示意预览模式（非链上结果）——写链按钮与档案导出已禁用</div>
 <div id="notice" role="status"></div>
-<nav class="pipeline" id="pipeline" aria-label="consensus pipeline"></nav>
 <nav class="mobile-tabs" aria-label="sections">
   <button type="button" class="mobile-tab active" data-mtab="canvas" data-i18n="tabCanvas">画布 / 揭示</button>
   <button type="button" class="mobile-tab" data-mtab="guesses" data-i18n="tabGuesses">猜测流</button>
@@ -43,14 +28,86 @@
 </nav>
 
 <main id="human-view">
-<div class="room">
-  <!-- Left: round console + anchor lock -->
-  <div id="col-left">
-    <section class="panel" aria-label="round console">
+<div class="stage-layout">
+  <!-- Stage: the drawing, the verdict, one action -->
+  <div id="stage-col">
+    <section class="panel stage" aria-label="canvas">
+      <div class="stage-head">
+        <h2 data-i18n="canvasTitle">画布</h2>
+        <p id="canvas-state" class="hint">未确认</p>
+      </div>
+      <p class="canvas-warn" data-i18n="canvasWarn">仅限图形描绘——画布内写单词 / 字母 / 谐音将触发 AI 陪审团 DRAWING_MISS 零分裁决。</p>
+      <div class="canvas-frame">
+        <div class="canvas-wrap">
+          <canvas id="draw-canvas" width="384" height="384" aria-label="drawing canvas"></canvas>
+        </div>
+        <div class="canvas-dim" id="canvas-dim"></div>
+        <div class="stamp-overlay" id="stamp-overlay" aria-live="polite"></div>
+      </div>
+      <div class="guess-dock">
+        <label for="guess-input" data-i18n="guessPlaceholder">输入英文概念词…</label>
+        <div class="guess-dock-row">
+          <input id="guess-input" maxlength="48" placeholder="bicycle" autocomplete="off">
+          <button id="btn-guess" type="button" class="btn" data-i18n="submitGuess">质押并上链猜测（5 GEN）</button>
+        </div>
+        <p class="hint" data-i18n="guessNote">每轮每人限猜一次；猜中者按链上顺序取最快。</p>
+        <p class="signer-note"><span data-i18n="walletWriteLabel">写链交易签名方：浏览器临时测试账号</span> (<span class="signer-addr mono">临时签名器未创建</span>) <span data-i18n="walletWriteSuffix">—— 非用户主钱包签名</span></p>
+      </div>
+      <nav class="pipeline" id="pipeline" aria-label="consensus pipeline"></nav>
+      <div class="reveal-stage" id="reveal-stage" aria-label="reveal stage">
+        <p class="reveal-wait" data-i18n="revealWaiting">等待 FINALIZED 读回…</p>
+      </div>
+      <div class="canvas-tools">
+        <div class="toolbar" role="toolbar" aria-label="brush tools">
+          <button type="button" class="swatch active" data-color="#111927" style="background:#111927" aria-label="navy ink"></button>
+          <button type="button" class="swatch" data-color="#1D4ED8" style="background:#1D4ED8" aria-label="cobalt"></button>
+          <button type="button" class="swatch" data-color="#0F766E" style="background:#0F766E" aria-label="teal"></button>
+          <button type="button" class="swatch" data-color="#B45309" style="background:#B45309" aria-label="amber"></button>
+          <button type="button" class="swatch" data-color="#B91C1C" style="background:#B91C1C" aria-label="crimson"></button>
+          <button type="button" class="brush-size active" data-size="4">S</button>
+          <button type="button" class="brush-size" data-size="8">M</button>
+          <button type="button" class="brush-size" data-size="16">L</button>
+          <button type="button" class="tool-btn" id="btn-eraser" data-i18n="eraser">橡皮擦</button>
+          <button type="button" class="tool-btn" id="btn-clear" data-i18n="clear">清空</button>
+        </div>
+        <dl class="kv canvas-meta">
+          <div><dt data-i18n="imageSha">图片 SHA-256</dt><dd class="mono" id="image-sha">未确认</dd></div>
+          <div><dt data-i18n="imageBytes">图片字节</dt><dd class="mono" id="image-bytes">—</dd></div>
+          <div><dt data-i18n="b64Size">Base64 长度</dt><dd class="mono" id="b64-size">—</dd></div>
+        </dl>
+        <p id="canvas-preset" class="hint">未确认</p>
+        <button id="btn-draw" type="button" class="btn" data-i18n="submitDrawing">锁定画作哈希并进入猜谜阶段</button>
+        <p class="hint" data-i18n="submitDrawingNote">提交 384×384 PNG 字节（Base64）上链，哈希即锁定值。</p>
+        <p class="signer-note"><span data-i18n="walletWriteLabel">写链交易签名方：浏览器临时测试账号</span> (<span class="signer-addr mono">临时签名器未创建</span>) <span data-i18n="walletWriteSuffix">—— 非用户主钱包签名</span></p>
+      </div>
+      <button id="btn-reveal" type="button" class="btn" data-i18n="revealNow">揭示并自动结算</button>
+      <p class="signer-note"><span data-i18n="walletWriteLabel">写链交易签名方：浏览器临时测试账号</span> (<span class="signer-addr mono">临时签名器未创建</span>) <span data-i18n="walletWriteSuffix">—— 非用户主钱包签名</span></p>
+      <details class="demo-details">
+        <summary data-i18n="demoTitle">公开演示案例（一键装填）</summary>
+        <div class="demo-list">
+          <div class="demo-row"><span data-i18n="demoCase1">CASE-1 正常手绘自行车</span><button type="button" class="btn demo-btn" data-case="CASE-1" data-i18n="loadDemo">装填</button></div>
+          <div class="demo-row"><span data-i18n="demoCase2">CASE-2 极简灯塔草图（弱匹配）</span><button type="button" class="btn demo-btn" data-case="CASE-2" data-i18n="loadDemo">装填</button></div>
+          <div class="demo-row"><span data-i18n="demoCase3">CASE-3 直接写单词 VOLCANO（作弊拦截）</span><button type="button" class="btn demo-btn" data-case="CASE-3" data-i18n="loadDemo">装填</button></div>
+          <div class="demo-row"><span data-i18n="demoCase4">CASE-4 无关图（视觉不符）</span><button type="button" class="btn demo-btn" data-case="CASE-4" data-i18n="loadDemo">装填</button></div>
+        </div>
+      </details>
+    </section>
+  </div>
+
+  <!-- Side rail: facts, money, stream, wallet, play forms -->
+  <aside id="rail-col">
+    <section class="panel rail-pool" aria-label="pools">
+      <div class="pool-strip">
+        <div><span class="pool-label" data-i18n="currentPot">本轮奖池</span><strong class="pool-big" id="pool-current">—（未确认）</strong></div>
+        <div><span class="pool-label" data-i18n="rolloverPool">滚存奖池</span><strong class="pool-big" id="pool-rollover">—（未确认）</strong></div>
+        <div><span class="pool-label" data-i18n="roundCount">轮次总数</span><strong class="pool-big" id="round-count">—（未确认）</strong></div>
+      </div>
+    </section>
+
+    <section class="panel rail-console" aria-label="round console">
       <h2 data-i18n="consoleTitle">回合控制台</h2>
       <dl class="kv">
         <div><dt data-i18n="statusLabel">状态</dt><dd class="mono" id="c-status">未确认</dd></div>
-        <div><dt data-i18n="commitOnChain">链上 Commit SHA-256</dt><dd class="mono" id="c-commit">未确认</dd></div>
         <div><dt data-i18n="categoryHint">类别提示</dt><dd class="mono" id="c-category">未确认</dd></div>
         <div><dt data-i18n="drawingDeadline">作画截止</dt><dd class="mono" id="c-draw-deadline">未确认</dd></div>
         <div><dt data-i18n="revealDeadline">揭示截止</dt><dd class="mono" id="c-reveal-deadline">未确认</dd></div>
@@ -59,109 +116,17 @@
         <div><dt data-i18n="cheatGate">写字作弊门</dt><dd class="mono" id="c-cheat">未确认</dd></div>
         <div><dt>visual_depiction_tier</dt><dd class="mono" id="c-tier">未确认</dd></div>
       </dl>
-      <button id="btn-timeout" type="button" class="btn warn" disabled data-i18n="timeoutRescue">触发超时保护结算</button>
-      <p class="hint" data-i18n="timeoutRescueHint">仅在截止时间过后可用；任意参与者可触发。</p>
-      <p class="signer-note"><span data-i18n="walletWriteLabel">写链交易签名方：浏览器临时测试账号</span> (<span class="signer-addr mono">临时签名器未创建</span>) <span data-i18n="walletWriteSuffix">—— 非用户主钱包签名</span></p>
-
-      <div class="vault">
-        <h3 data-i18n="vaultTitle">画者本地保险箱（不出浏览器）</h3>
-        <p class="warn" data-i18n="vaultWarn">概念与盐只存在你的浏览器内存里。丢盐或关页将无法揭示！</p>
+      <details class="evidence-details">
+        <summary data-i18n="evidenceDetails">链上证据</summary>
         <dl class="kv">
-          <div><dt data-i18n="roundIdLabel">轮次 ID</dt><dd class="mono" id="vault-round">—</dd></div>
-          <div><dt data-i18n="conceptLabel">秘密概念（英文）</dt><dd class="mono" id="vault-concept">—</dd></div>
-          <div><dt data-i18n="saltLabel">盐（Salt）</dt><dd class="mono" id="vault-salt">—</dd></div>
-          <div><dt>Commit</dt><dd class="mono" id="vault-commit">—</dd></div>
+          <div><dt data-i18n="commitOnChain">链上 Commit SHA-256</dt><dd class="mono" id="c-commit">未确认</dd></div>
         </dl>
-      </div>
-
-      <h3 data-i18n="commitTitle">秘密概念承诺</h3>
-      <label for="round-id" data-i18n="roundIdLabel">轮次 ID</label>
-      <input id="round-id" maxlength="48" placeholder="T1" autocomplete="off">
-      <label for="concept" data-i18n="conceptLabel">秘密概念（英文）</label>
-      <input id="concept" maxlength="48" placeholder="bicycle" autocomplete="off">
-      <label for="salt" data-i18n="saltLabel">盐（Salt）</label>
-      <input id="salt" maxlength="64" placeholder="" autocomplete="off">
-      <button id="btn-gen-salt" type="button" class="btn secondary" data-i18n="autoGenSalt">自动生成盐</button>
-      <label for="category" data-i18n="categoryHint">类别提示</label>
-      <input id="category" maxlength="40" placeholder="VEHICLE" autocomplete="off">
-      <label for="draw-min" data-i18n="drawDuration">作画时长（分钟）</label>
-      <input id="draw-min" type="number" min="1" max="1440" value="5">
-      <label for="guess-min" data-i18n="guessDuration">猜测时长（分钟）</label>
-      <input id="guess-min" type="number" min="1" max="1440" value="10">
-      <button id="btn-start" type="button" class="btn" data-i18n="startRound">开局并锁定概念</button>
-      <p class="hint" data-i18n="startStakeNote">开局质押 10 GEN（画者）。</p>
-      <p class="signer-note"><span data-i18n="walletWriteLabel">写链交易签名方：浏览器临时测试账号</span> (<span class="signer-addr mono">临时签名器未创建</span>) <span data-i18n="walletWriteSuffix">—— 非用户主钱包签名</span></p>
+      </details>
+      <button id="btn-timeout" type="button" class="btn secondary" disabled data-i18n="timeoutRescue">触发超时保护结算</button>
+      <p class="hint" data-i18n="timeoutRescueHint">仅在截止时间过后可用；任意参与者可触发。</p>
     </section>
-  </div>
 
-  <!-- Centre: canvas + reveal stage -->
-  <div id="col-centre">
-    <section class="panel" aria-label="canvas">
-      <h2 data-i18n="canvasTitle">画布</h2>
-      <p class="canvas-warn" data-i18n="canvasWarn">仅限图形描绘——画布内写单词 / 字母 / 谐音将触发 AI 陪审团 DRAWING_MISS 零分裁决。</p>
-      <p id="canvas-state" class="hint">未确认</p>
-      <div class="canvas-wrap">
-        <canvas id="draw-canvas" width="384" height="384" aria-label="drawing canvas"></canvas>
-      </div>
-      <p id="canvas-preset" class="hint">未确认</p>
-      <div class="toolbar" role="toolbar" aria-label="brush tools">
-        <button type="button" class="swatch active" data-color="#111927" style="background:#111927" aria-label="navy ink"></button>
-        <button type="button" class="swatch" data-color="#1D4ED8" style="background:#1D4ED8" aria-label="cobalt"></button>
-        <button type="button" class="swatch" data-color="#0F766E" style="background:#0F766E" aria-label="teal"></button>
-        <button type="button" class="swatch" data-color="#B45309" style="background:#B45309" aria-label="amber"></button>
-        <button type="button" class="swatch" data-color="#B91C1C" style="background:#B91C1C" aria-label="crimson"></button>
-        <button type="button" class="brush-size active" data-size="4">S</button>
-        <button type="button" class="brush-size" data-size="8">M</button>
-        <button type="button" class="brush-size" data-size="16">L</button>
-        <button type="button" class="tool-btn" id="btn-eraser" data-i18n="eraser">橡皮擦</button>
-        <button type="button" class="tool-btn" id="btn-clear" data-i18n="clear">清空</button>
-      </div>
-      <dl class="kv canvas-meta">
-        <div><dt data-i18n="imageSha">图片 SHA-256</dt><dd class="mono" id="image-sha">未确认</dd></div>
-        <div><dt data-i18n="imageBytes">图片字节</dt><dd class="mono" id="image-bytes">—</dd></div>
-        <div><dt data-i18n="b64Size">Base64 长度</dt><dd class="mono" id="b64-size">—</dd></div>
-      </dl>
-      <button id="btn-draw" type="button" class="btn" data-i18n="submitDrawing">锁定画作哈希并进入猜谜阶段</button>
-      <p class="hint" data-i18n="submitDrawingNote">提交 384×384 PNG 字节（Base64）上链，哈希即锁定值。</p>
-      <p class="signer-note"><span data-i18n="walletWriteLabel">写链交易签名方：浏览器临时测试账号</span> (<span class="signer-addr mono">临时签名器未创建</span>) <span data-i18n="walletWriteSuffix">—— 非用户主钱包签名</span></p>
-
-      <div class="reveal-stage" id="reveal-stage" aria-label="reveal stage">
-        <h2 data-i18n="revealTitle">陪审团揭示台</h2>
-        <p class="reveal-wait" data-i18n="revealWaiting">等待 FINALIZED 读回…</p>
-      </div>
-      <button id="btn-reveal" type="button" class="btn" data-i18n="revealNow">揭示并自动结算</button>
-      <p class="signer-note"><span data-i18n="walletWriteLabel">写链交易签名方：浏览器临时测试账号</span> (<span class="signer-addr mono">临时签名器未创建</span>) <span data-i18n="walletWriteSuffix">—— 非用户主钱包签名</span></p>
-
-      <h3 data-i18n="challengeTitle">挑战（揭示后 10 分钟窗口内）</h3>
-      <label for="challenge-hash" data-i18n="correctedHash">修正后的哈希（64 位十六进制）</label>
-      <input id="challenge-hash" maxlength="64" placeholder="64-char hex" autocomplete="off">
-      <button id="btn-challenge" type="button" class="btn warn" data-i18n="challengeBtn">发起挑战（质押 5 GEN）</button>
-      <p class="signer-note"><span data-i18n="walletWriteLabel">写链交易签名方：浏览器临时测试账号</span> (<span class="signer-addr mono">临时签名器未创建</span>) <span data-i18n="walletWriteSuffix">—— 非用户主钱包签名</span></p>
-      <button id="btn-settle" type="button" class="btn" data-i18n="settleBtn">结算（窗口结束后）</button>
-      <p class="signer-note"><span data-i18n="walletWriteLabel">写链交易签名方：浏览器临时测试账号</span> (<span class="signer-addr mono">临时签名器未创建</span>) <span data-i18n="walletWriteSuffix">—— 非用户主钱包签名</span></p>
-
-      <h3 data-i18n="demoTitle">公开演示案例（一键装填）</h3>
-      <div class="demo-list">
-        <div class="demo-row"><span data-i18n="demoCase1">CASE-1 正常手绘自行车</span><button type="button" class="btn demo-btn" data-case="CASE-1" data-i18n="loadDemo">装填</button></div>
-        <div class="demo-row"><span data-i18n="demoCase2">CASE-2 极简灯塔草图（弱匹配）</span><button type="button" class="btn demo-btn" data-case="CASE-2" data-i18n="loadDemo">装填</button></div>
-        <div class="demo-row"><span data-i18n="demoCase3">CASE-3 直接写单词 VOLCANO（作弊拦截）</span><button type="button" class="btn demo-btn" data-case="CASE-3" data-i18n="loadDemo">装填</button></div>
-        <div class="demo-row"><span data-i18n="demoCase4">CASE-4 无关图（视觉不符）</span><button type="button" class="btn demo-btn" data-case="CASE-4" data-i18n="loadDemo">装填</button></div>
-      </div>
-    </section>
-  </div>
-
-  <!-- Right: guess stream + payout board -->
-  <div id="col-right">
-    <section class="panel" aria-label="guess stream">
-      <h2><span data-i18n="guessTitle">实时猜测流</span> (<span id="guess-count">—</span>)</h2>
-      <div id="guess-stream"><p class="empty" data-i18n="unconfirmedLong">未确认 / Unconfirmed（等待链上 FINALIZED 读回）</p></div>
-      <label for="guess-input" data-i18n="guessPlaceholder">输入英文概念词…</label>
-      <input id="guess-input" maxlength="48" placeholder="bicycle" autocomplete="off">
-      <button id="btn-guess" type="button" class="btn" data-i18n="submitGuess">质押并上链猜测（5 GEN）</button>
-      <p class="hint" data-i18n="guessNote">每轮每人限猜一次；猜中者按链上顺序取最快。</p>
-      <p class="signer-note"><span data-i18n="walletWriteLabel">写链交易签名方：浏览器临时测试账号</span> (<span class="signer-addr mono">临时签名器未创建</span>) <span data-i18n="walletWriteSuffix">—— 非用户主钱包签名</span></p>
-    </section>
-    <section class="panel" aria-label="payout board">
+    <section class="panel rail-payout" aria-label="payout board">
       <h2 data-i18n="payoutTitle">奖金榜</h2>
       <dl class="kv">
         <div><dt data-i18n="totalPot">奖池总额</dt><dd class="mono" id="p-total">—（未确认）</dd></div>
@@ -180,10 +145,64 @@
       <button id="btn-withdraw" type="button" class="btn" data-i18n="withdraw">提取余额</button>
       <p class="signer-note"><span data-i18n="walletWriteLabel">写链交易签名方：浏览器临时测试账号</span> (<span class="signer-addr mono">临时签名器未创建</span>) <span data-i18n="walletWriteSuffix">—— 非用户主钱包签名</span></p>
     </section>
-  </div>
+
+    <section class="panel rail-guesses" aria-label="guess stream">
+      <h2><span data-i18n="guessTitle">实时猜测流</span> (<span id="guess-count">—</span>)</h2>
+      <div id="guess-stream"><p class="empty" data-i18n="unconfirmedLong">未确认 / Unconfirmed（等待链上 FINALIZED 读回）</p></div>
+    </section>
+
+    <section class="panel rail-wallet" aria-label="wallet">
+      <h2 data-i18n="walletTitle">钱包</h2>
+      <p><span id="wallet-capsule" class="mono">未确认</span></p>
+      <button id="btn-connect" type="button" class="btn" data-i18n="connectInjected">连接注入钱包（OKX / MetaMask / Rabby / Coinbase）</button>
+      <button id="btn-temp" type="button" class="btn secondary" data-i18n="useTempSigner">启用浏览器临时签名器</button>
+      <button id="btn-disconnect" type="button" class="btn secondary" data-i18n="disconnect">断开</button>
+      <p class="hint" data-i18n="walletTempNote">临时测试账号仅存于当前浏览器会话内存，关闭页面即销毁，绝不落盘、不上传。</p>
+    </section>
+
+    <details class="panel rail-start">
+      <summary data-i18n="commitTitle">秘密概念承诺</summary>
+      <div class="vault">
+        <h3 data-i18n="vaultTitle">画者本地保险箱（不出浏览器）</h3>
+        <p class="warn" data-i18n="vaultWarn">概念与盐只存在你的浏览器内存里。丢盐或关页将无法揭示！</p>
+        <dl class="kv">
+          <div><dt data-i18n="roundIdLabel">轮次 ID</dt><dd class="mono" id="vault-round">—</dd></div>
+          <div><dt data-i18n="conceptLabel">秘密概念（英文）</dt><dd class="mono" id="vault-concept">—</dd></div>
+          <div><dt data-i18n="saltLabel">盐（Salt）</dt><dd class="mono" id="vault-salt">—</dd></div>
+          <div><dt>Commit</dt><dd class="mono" id="vault-commit">—</dd></div>
+        </dl>
+      </div>
+      <label for="round-id" data-i18n="roundIdLabel">轮次 ID</label>
+      <input id="round-id" maxlength="48" placeholder="T1" autocomplete="off">
+      <label for="concept" data-i18n="conceptLabel">秘密概念（英文）</label>
+      <input id="concept" maxlength="48" placeholder="bicycle" autocomplete="off">
+      <label for="salt" data-i18n="saltLabel">盐（Salt）</label>
+      <input id="salt" maxlength="64" placeholder="" autocomplete="off">
+      <button id="btn-gen-salt" type="button" class="btn secondary" data-i18n="autoGenSalt">自动生成盐</button>
+      <label for="category" data-i18n="categoryHint">类别提示</label>
+      <input id="category" maxlength="40" placeholder="VEHICLE" autocomplete="off">
+      <label for="draw-min" data-i18n="drawDuration">作画时长（分钟）</label>
+      <input id="draw-min" type="number" min="1" max="1440" value="5">
+      <label for="guess-min" data-i18n="guessDuration">猜测时长（分钟）</label>
+      <input id="guess-min" type="number" min="1" max="1440" value="10">
+      <button id="btn-start" type="button" class="btn" data-i18n="startRound">开局并锁定概念</button>
+      <p class="hint" data-i18n="startStakeNote">开局质押 10 GEN（画者）。</p>
+      <p class="signer-note"><span data-i18n="walletWriteLabel">写链交易签名方：浏览器临时测试账号</span> (<span class="signer-addr mono">临时签名器未创建</span>) <span data-i18n="walletWriteSuffix">—— 非用户主钱包签名</span></p>
+    </details>
+
+    <details class="panel rail-challenge">
+      <summary data-i18n="challengeTitle">挑战（揭示后 10 分钟窗口内）</summary>
+      <label for="challenge-hash" data-i18n="correctedHash">修正后的哈希（64 位十六进制）</label>
+      <input id="challenge-hash" maxlength="64" placeholder="64-char hex" autocomplete="off">
+      <button id="btn-challenge" type="button" class="btn warn" data-i18n="challengeBtn">发起挑战（质押 5 GEN）</button>
+      <p class="signer-note"><span data-i18n="walletWriteLabel">写链交易签名方：浏览器临时测试账号</span> (<span class="signer-addr mono">临时签名器未创建</span>) <span data-i18n="walletWriteSuffix">—— 非用户主钱包签名</span></p>
+      <button id="btn-settle" type="button" class="btn" data-i18n="settleBtn">结算（窗口结束后）</button>
+      <p class="signer-note"><span data-i18n="walletWriteLabel">写链交易签名方：浏览器临时测试账号</span> (<span class="signer-addr mono">临时签名器未创建</span>) <span data-i18n="walletWriteSuffix">—— 非用户主钱包签名</span></p>
+    </details>
+  </aside>
 </div>
 
-<!-- Deck: gallery + evidence -->
+<!-- Deck: gallery + evidence (below the fold) -->
 <section class="deck" id="deck">
   <div class="deck-tabs">
     <button type="button" class="deck-tab active" data-deck="gallery" data-i18n="galleryTab">裁决画廊</button>
@@ -203,8 +222,10 @@
     <button type="button" data-view="human" class="active" data-i18n="viewHuman">Human 视图</button>
     <button type="button" data-view="machine" data-i18n="viewMachine">Machine 视图</button>
   </span>
+  <button id="lang-toggle" type="button" class="footer-btn">EN</button>
+  <button id="static-toggle" type="button" class="footer-btn">静态模式：OFF</button>
   <button id="btn-refresh" type="button" class="btn secondary" data-i18n="refresh">刷新读回</button>
 </footer>
-<script type="module" src="dist/app.js?v=8e07c4d75455"></script>
+<script type="module" src="dist/app.js?v=314a70f7847b"></script>
 </body>
 </html>
