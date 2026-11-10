@@ -9,6 +9,7 @@
  */
 import { createAccount, createClient } from 'genlayer-js';
 import { studionet } from 'genlayer-js/chains';
+import { assertSuccessfulConsensus } from './receipt.mjs';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 
@@ -64,12 +65,19 @@ for (const t of journal.transactions ?? []) {
   if (finalized) txFinalized++;
   else check('tx FINALIZED: ' + t.label, false, 'status=' + live?.status);
   if (t.expect === 'fail') {
-    const agreed = [6, '6', 'MAJORITY_AGREE'].includes(live?.result);
-    check('tx expected-failure (no agreement): ' + t.label, !agreed,
-      'result=' + live?.result);
+    // A call that must raise: validators AGREE the call raises
+    // (result MAJORITY_AGREE) but no leader execution SUCCEEDS.
+    // The criterion is the same one the evidence runner used at
+    // submission time (assertSuccessfulConsensus throws).
+    let failed = false;
+    try { assertSuccessfulConsensus(live); } catch (e) { failed = true; }
+    check('tx expected-failure (no successful leader execution): ' + t.label,
+      failed, 'result=' + live?.result);
   } else {
-    const agreed = [6, '6', 'MAJORITY_AGREE'].includes(live?.result);
-    check('tx consensus agreed: ' + t.label, agreed, 'result=' + live?.result);
+    let c = null;
+    try { c = assertSuccessfulConsensus(live); } catch (e) { /* recorded below */ }
+    check('tx consensus agreed: ' + t.label, !!c,
+      c ? c.agree + '/' + c.total + ' AGREE' : 'result=' + live?.result);
   }
 }
 console.log('txs re-read live:', txFinalized + '/' + txTotal, 'FINALIZED');
@@ -82,7 +90,24 @@ check('total_withdrawn_wei', acc.total_withdrawn_wei === '162250000000000000000'
 check('credits_outstanding_wei', acc.credits_outstanding_wei === '33750000000000000000', acc.credits_outstanding_wei);
 check('rollover_pool_wei', acc.rollover_pool_wei === '1', acc.rollover_pool_wei);
 check('locked_stakes_wei', acc.locked_stakes_wei === '0', acc.locked_stakes_wei);
-check('balance_matches_accounted', acc.balance_matches_accounted === true);
+// The contract balance exceeds the accounted value by exactly the
+// 20 GEN stranded by three MAJORITY_DISAGREE txs (value moved into
+// the contract without executing; no credit, no total_received
+// entry — see journal.stranded_disagreed_wei). The invariant over
+// accounted value still holds; balance_matches_accounted is false
+// as a consequence, and must be false exactly when stranded > 0.
+const stranded = BigInt(journal.stranded_disagreed_wei?.amount_wei ?? '0');
+// balance = credits + rollover + locked + stranded
+// (received = withdrawn + credits + rollover + locked, and
+//  balance = received + stranded - withdrawn).
+const gap = BigInt(acc.contract_balance_wei)
+  - BigInt(acc.credits_outstanding_wei) - BigInt(acc.rollover_pool_wei)
+  - BigInt(acc.locked_stakes_wei);
+check('balance gap equals documented stranded disagreed value',
+  gap === stranded, 'gap=' + gap + ' stranded=' + stranded);
+check('balance_matches_accounted false iff stranded > 0',
+  acc.balance_matches_accounted === (stranded === 0n),
+  'balance_matches_accounted=' + acc.balance_matches_accounted);
 
 const expectedRounds = {
   R1: ['DRAWING_MATCHES', 'VISUAL_MATCH_CONFIRMED', '12500000000000000000', '0'],

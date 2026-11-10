@@ -329,6 +329,10 @@ async function main() {
   // run the given settle step.
   async function settleAfterWindow(roundId, settleLabel) {
     const rnd = await getRound(roundId);
+    if (rnd.status === 'SETTLED') {
+      console.log(settleLabel, roundId, 'already SETTLED, skipping wait');
+      return rnd;
+    }
     expect(rnd.status === 'JUDGED', roundId + ' not JUDGED before settle');
     await waitMinuteGreaterThan(parseInt(rnd.challenge_deadline_minute, 10),
       settleLabel + ':wait');
@@ -740,9 +744,13 @@ async function main() {
       expect(r.reason_code === 'DRAWER_REVEAL_TIMEOUT', 'R8 reason ' + r.reason_code);
       expect(r.timeout_forfeited_wei === (10n * GEN).toString(), 'R8 forfeit');
       expect(r.next_rollover_pool_wei === (20n * GEN).toString(), 'R8 rollover');
-      expect((await getStats(addr('a'))).balance_wei === (125n * GEN / 10n).toString(),
+      // A: 5 (R2 MATCHES) + 2.5 (R2b WEAK) + 5 (R8 refund)
+      //    + 5 (R10-1 dup-guess deposit refunded on reject).
+      expect((await getStats(addr('a'))).balance_wei === (175n * GEN / 10n).toString(),
         'R8 A refund');
-      expect((await getStats(addr('b'))).balance_wei === (5125n * GEN / 100n).toString(),
+      // B: 6.25 (R1) + 5 (R2) + 2.5 (R2b) + 27.5 (R5) + 10 (R6)
+      //    + 5 (R8 refund).
+      expect((await getStats(addr('b'))).balance_wei === (5625n * GEN / 100n).toString(),
         'R8 B refund');
       return { reason: r.reason_code, rollover: r.next_rollover_pool_wei };
     });
@@ -842,6 +850,7 @@ async function main() {
   expect(finalScores.a.score === 150, 'A final score');
   expect(finalScores.c.score === 30, 'C final score');
   journal.completed_at = new Date().toISOString();
+  delete journal.error; // clear any stale error from an earlier interrupted run
   save();
   console.log('EVIDENCE COMPLETE');
   console.log('contract:', address);
