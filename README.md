@@ -1,6 +1,6 @@
 # SketchVerdict — 绘画猜谜派对游戏 / Draw-and-Guess Party Game
 
-> Live site: (frontend coming — the contract and evidence below are live)
+> Live site: https://gqzy1.github.io/sketchverdict-genlayer/
 >
 > Contract (Stable Studionet): [`0x56C85764c91F439185f446e019BB70A877458b54`](https://explorer-studio.genlayer.com/address/0x56C85764c91F439185f446e019BB70A877458b54)
 >
@@ -111,6 +111,35 @@ See `docs/API.md` — exact view method names and JSON shapes
 (`get_round`, `get_room_state`, `get_gallery`, `get_player_stats`,
 `get_witness_log`, `get_accounting`). The frontend displays values
 only from FINALIZED readbacks.
+
+## Frontend / 前端
+
+Live site: https://gqzy1.github.io/sketchverdict-genlayer/ — a static
+three-column game room (round console, 384×384 drawing canvas, live
+guess stream + payout board) with a verdict gallery and a reviewer
+evidence page below, plus a Human | Machine view toggle. Bilingual
+CN/EN with a hot toggle; all on-chain values stay in English.
+
+- Draw on the canvas (pointer events, 5 ink colours, eraser, no text
+  tool) or load one of the four public demo cases; the PNG is exported
+  at 384×384 and its SHA-256 is shown live before submit. Drawings are
+  stored on-chain as base64 bytes — no URLs anywhere in the contract flow.
+- Reads are pinned to `latest-final`. Before a FINALIZED readback,
+  every verdict, payout, and score field shows Unconfirmed; the dossier
+  export stays disabled until the round is SETTLED with a FINALIZED readback.
+- Writes go through the in-browser Ephemeral Studio Signer (a temporary
+  test account generated in session memory only, never persisted); the
+  injected wallet (OKX / MetaMask / Rabby / Coinbase) is used to connect
+  and read, and every write button is labelled with the actual signer.
+- The drawer's concept + salt live only in browser memory (the vault)
+  and never leave it except as the reveal preimage.
+- `?static` (or the Static Mode switch, or `prefers-reduced-motion`)
+  freezes all motion with every panel still readable.
+- Build: `npm run build-site` (esbuild bundles `site/src/app.js` with
+  genlayer-js 1.1.8 into `dist/app.js` and stamps `?v=<bundle sha256>`
+  onto the script tag). Frontend tests: `npm run test-frontend`
+  (i18n parity, dossier export gate, demo SHA-256, Gate 11 static checks,
+  live read-path smoke test).
 
 ## Tech / 技术
 

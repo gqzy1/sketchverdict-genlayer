@@ -1,1 +1,20 @@
-{"dependencies":{"genlayer-js":"1.1.8","viem":"2.57.17"},"name":"sketchverdict-genlayer","private":true,"scripts":{"evidence":"node scripts/evidence.mjs","test":"python3 -m unittest discover -s tests -v","verify":"node scripts/verify.mjs"},"type":"module","version":"1.0.0"}
+{
+  "dependencies": {
+    "genlayer-js": "1.1.8",
+    "viem": "2.57.17"
+  },
+  "name": "sketchverdict-genlayer",
+  "private": true,
+  "scripts": {
+    "evidence": "node scripts/evidence.mjs",
+    "test": "python3 -m unittest discover -s tests -v",
+    "verify": "node scripts/verify.mjs",
+    "build-site": "node scripts/build_site.mjs",
+    "test-frontend": "node --test tests/frontend.test.mjs"
+  },
+  "type": "module",
+  "version": "1.0.0",
+  "devDependencies": {
+    "esbuild": "^0.25.5"
+  }
+}
