@@ -1,0 +1,23 @@
+{
+  "bicycle.png": {
+    "b64_chars": 6136,
+    "bytes": 4602,
+    "sha256": "3aefeb2ef18da01f9c14d74340d94c9076201b20f2d2fadfeea72bb829527e14"
+  },
+  "crank.png": {
+    "b64_chars": 60028,
+    "bytes": 45021,
+    "sha256": "e2bb96fcbb14606c63f77e853c59e160ccd4d196081cd8729e0b95747a53a546",
+    "source": "probe evidence, Wikimedia Commons File:Crank (PSF).png, public domain line art"
+  },
+  "lighthouse.png": {
+    "b64_chars": 2112,
+    "bytes": 1582,
+    "sha256": "c06fd82a7430dc0695e01304b2fbe7a56a510b7421e2b69bdca4978d4cc048f3"
+  },
+  "volcano-text.png": {
+    "b64_chars": 8188,
+    "bytes": 6139,
+    "sha256": "d0da6341b39ca4d868d1f75bb2fbbb525c050a007008ff95881dddbf7c59c666"
+  }
+}
