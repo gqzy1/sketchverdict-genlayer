@@ -23530,7 +23530,7 @@ function potSplitHTML(round) {
     <div class="split-drawer" style="width:${pct(drawer)}%"></div>
     <div class="split-guesser" style="width:${pct(guessers)}%"></div>
     <div class="split-roll" style="width:${pct(roll)}%"></div></div>
-  <div class="split-legend"><span>${esc(t(lang, "drawerShare"))} ${esc(fmtGen(drawer.toString()))}</span><span>${esc(t(lang, "guesserShare"))} ${esc(fmtGen(guessers.toString()))}</span><span>${esc(t(lang, "rolloverShare"))} ${esc(fmtGen(roll.toString()))}</span></div>`;
+  <div class="split-legend"><span>${esc(t(lang, "drawerShare"))} ${esc(fmtGen(drawer.toString()))}</span><span>${esc(t(lang, "guesserShare"))} ${esc(fmtGen(guessers.toString()))}</span><span>${esc(t(lang, "rolloverShare"))} ${esc(fmtGenExact(roll.toString()))}</span></div>`;
 }
 function renderAll() {
   applyI18n();
@@ -23548,7 +23548,7 @@ function renderAll() {
 function renderRoom() {
   const live = readbackOk();
   const room = live ? snapshot.room : null;
-  $("#pool-rollover").textContent = room ? fmtGen(room.rollover_pool_wei) : t(lang, "dashUnconfirmed");
+  $("#pool-rollover").textContent = room ? fmtGenExact(room.rollover_pool_wei) : t(lang, "dashUnconfirmed");
   $("#round-count").textContent = room ? String(room.round_count) : t(lang, "dashUnconfirmed");
   const rid = live ? snapshot.round?.round_id || room?.current_round_id || "" : "";
   $("#round-id-display").textContent = rid || t(lang, "unconfirmed");
@@ -23564,7 +23564,7 @@ function renderRoom() {
     return `<span class="pipe-step${active ? " active" : ""}">${esc(label)}</span>`;
   }).join('<span class="pipe-arrow">\u2192</span>');
   const pot = live ? snapshot.round : null;
-  $("#pool-current").textContent = pot?.total_pot_wei ? fmtGen(pot.total_pot_wei) : t(lang, "dashUnconfirmed");
+  $("#pool-current").textContent = pot?.total_pot_wei ? fmtGenExact(pot.total_pot_wei) : t(lang, "dashUnconfirmed");
 }
 function renderConsole() {
   const r = readbackOk() ? snapshot.round : null;
@@ -23644,8 +23644,8 @@ function renderPayouts() {
   $("#p-drawer").textContent = r?.status === "SETTLED" ? fmtGen(r.drawer_payout_wei) : u();
   const guessTotal = r?.status === "SETTLED" ? Object.values(r.guesser_payouts || {}).reduce((a, v) => a + BigInt(v || "0"), 0n).toString() : null;
   $("#p-guessers").textContent = guessTotal !== null ? fmtGen(guessTotal) : u();
-  $("#p-rollover").textContent = r?.status === "SETTLED" ? fmtGen(r.next_rollover_pool_wei) : room ? fmtGen(room.rollover_pool_wei) : u();
-  $("#p-total").textContent = r?.status === "SETTLED" ? fmtGen(r.total_pot_wei) : u();
+  $("#p-rollover").textContent = r?.status === "SETTLED" ? fmtGenExact(r.next_rollover_pool_wei) : room ? fmtGenExact(room.rollover_pool_wei) : u();
+  $("#p-total").textContent = r?.status === "SETTLED" ? fmtGenExact(r.total_pot_wei) : u();
   $("#p-fastest").textContent = r?.status === "SETTLED" ? r.fastest_guesser ? shortAddr(r.fastest_guesser) : "\u2014" : u();
   const stats = readbackOk() ? snapshot.stats : null;
   $("#p-score").textContent = stats ? String(stats.score) : u();
@@ -23723,7 +23723,7 @@ function renderEvidence() {
       return `<tr><td class="mono">${esc(e.round_id)}</td><td colspan="7">${esc(t(lang, "unconfirmed"))}</td></tr>`;
     }
     const guessers = Object.entries(d.guesser_payouts || {}).map(([a, v]) => `${shortAddr(a)} ${fmtGen(v)}`).join(", ") || "\u2014";
-    return `<tr><td class="mono">${esc(d.round_id)}</td><td class="mono">${esc(d.revealed_concept || "")}</td><td class="mono">${esc(d.drawing_verdict || t(lang, "unconfirmed"))}</td><td class="mono">${esc(d.reason_code || "")}</td><td>${esc(fmtGenExact(d.total_pot_wei))}</td><td>${esc(fmtGen(d.drawer_payout_wei))}</td><td>${esc(guessers)}</td><td>${esc(fmtGen(d.next_rollover_pool_wei))}</td></tr>`;
+    return `<tr><td class="mono">${esc(d.round_id)}</td><td class="mono">${esc(d.revealed_concept || "")}</td><td class="mono">${esc(d.drawing_verdict || t(lang, "unconfirmed"))}</td><td class="mono">${esc(d.reason_code || "")}</td><td>${esc(fmtGenExact(d.total_pot_wei))}</td><td>${esc(fmtGen(d.drawer_payout_wei))}</td><td>${esc(guessers)}</td><td>${esc(fmtGenExact(d.next_rollover_pool_wei))}</td></tr>`;
   }).join("");
   box.innerHTML = `
     <h3>${esc(t(lang, "claimsTitle"))}</h3>

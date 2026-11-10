@@ -211,6 +211,27 @@ test('Gate 11 structural: canvas meta never shows a hash for blank paper; demos 
   assert.ok(app.includes("canvasContent = 'drawn'"), 'the first stroke invalidates a loaded demo');
 });
 
+test('amounts render exact wei (odd-wei pots are never rounded away)', () => {
+  const app = read('site/src/app.js');
+  assert.ok(app.includes('function fmtGenExact'), 'fmtGenExact exists');
+  // Every pot / rollover display goes through the exact formatter: R9's
+  // 26 GEN + 1 wei pot and 1 wei rollover must not render as 26.000000 /
+  // 0.000000 GEN.
+  for (const site of ['fmtGenExact(room.rollover_pool_wei)', 'fmtGenExact(pot.total_pot_wei)',
+    'fmtGenExact(r.total_pot_wei)', 'fmtGenExact(r.next_rollover_pool_wei)',
+    'fmtGenExact(d.total_pot_wei)', 'fmtGenExact(d.next_rollover_pool_wei)',
+    'fmtGenExact(roll.toString())']) {
+    assert.ok(app.includes(site), 'exact amount display missing: ' + site);
+  }
+});
+
+test('mobile: room grid items may shrink (375px must not scroll horizontally)', () => {
+  const css = read('site/src/styles.css');
+  assert.ok(css.includes('.room > div'), 'room children rule present');
+  const rule = css.slice(css.indexOf('.room > div'));
+  assert.ok(rule.includes('min-width: 0'), 'room grid children must allow shrinking below min-content');
+});
+
 test('Gate 11 static: index.html has full contract address, no dead address, no verdict claims', () => {
   const html = read('index.html');
   assert.ok(html.includes('0x56C85764c91F439185f446e019BB70A877458b54'), 'full address as visible text');

@@ -102,6 +102,10 @@ h3 { font-size: 1.05rem; }
   display: grid; grid-template-columns: 26% 44% 30%;
   gap: 1rem; padding: 1rem 1.2rem; align-items: start;
 }
+/* Grid items must be allowed to shrink below their min-content, or a wide
+ * unbreakable descendant blows the track out and the page scrolls
+ * horizontally on mobile (375px measured 394px scrollWidth before this). */
+.room > div { min-width: 0; }
 .panel {
   background: var(--c-paper-sheet); color: var(--c-navy-ink);
   border-radius: 10px; padding: 1rem; margin-bottom: 1rem;
