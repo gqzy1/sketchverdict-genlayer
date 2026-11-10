@@ -261,6 +261,16 @@ async function refreshSnapshotOnce() {
   // replaced the snapshot wholesale, so every 30s cycle re-published
   // finalized=false and the UI flapped.)
   const prev = snapshot;
+  // The flag flips exactly once per cycle, at the final publish,
+  // together with readBackAt — never mid-refresh. An intermediate
+  // publish keeps the previous cycle's flag (keepFinalized), so a retry
+  // over a complete snapshot never unfinalizes the UI while it
+  // re-reads; on first load the flag stays false until the assembly
+  // is complete. The merged flag alone cannot be used mid-refresh:
+  // after the current-round read the merged fields are already
+  // complete, but readBackAt is not stamped until the assembly
+  // finishes — flipping there showed the marker as "· null".
+  let keepFinalized = prev?.finalized === true;
   const partial = prev ? {
     room: prev.room, round: prev.round, gallery: prev.gallery,
     galleryRounds: { ...prev.galleryRounds }, stats: prev.stats,
@@ -290,12 +300,17 @@ async function refreshSnapshotOnce() {
   // historical entry) so the slot shows unconfirmed until its fresh
   // read lands.
   const roundId = currentRoundId || roomR.data?.current_round_id || '';
-  if (partial.round && partial.round.round_id !== roundId) partial.round = null;
-  partial.finalized = computeFinalized();
+  if (partial.round && partial.round.round_id !== roundId) {
+    // Fresh data contradicts the retained snapshot: the old
+    // confirmation no longer holds, so the flag drops with the round.
+    partial.round = null;
+    keepFinalized = false;
+  }
+  partial.finalized = keepFinalized;
   publishSnapshot(partial);
   const galleryR = await readJson('get_gallery', []);
   partial.gallery = galleryR.data;
-  partial.finalized = computeFinalized();
+  partial.finalized = keepFinalized;
   publishSnapshot(partial);
   // Partial readback: the current-round read may fail while room + gallery
   // succeeded. Do not abort — keep room + gallery (and any retained
@@ -309,7 +324,7 @@ async function refreshSnapshotOnce() {
       const roundR = await readJson('get_round', [roundId]);
       partial.round = roundR.data;
       roundOk = true;
-      partial.finalized = computeFinalized();
+      partial.finalized = keepFinalized;
       publishSnapshot(partial);
     } catch { roundOk = false; }
   }
@@ -327,7 +342,7 @@ async function refreshSnapshotOnce() {
     try {
       const rr = await readJson('get_round', [e.round_id]);
       partial.galleryRounds[e.round_id] = rr.data;
-      partial.finalized = computeFinalized();
+      partial.finalized = keepFinalized;
       publishSnapshot(partial);
     } catch { /* keep gallery entry without image */ }
   });

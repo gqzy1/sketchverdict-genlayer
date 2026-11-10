@@ -23137,6 +23137,7 @@ async function refreshSnapshot() {
 }
 async function refreshSnapshotOnce() {
   const prev = snapshot;
+  let keepFinalized = prev?.finalized === true;
   const partial = prev ? {
     room: prev.room,
     round: prev.round,
@@ -23167,12 +23168,15 @@ async function refreshSnapshotOnce() {
   partial.room = roomR.data;
   partial.readAt = roomR.readAt;
   const roundId = currentRoundId || roomR.data?.current_round_id || "";
-  if (partial.round && partial.round.round_id !== roundId) partial.round = null;
-  partial.finalized = computeFinalized();
+  if (partial.round && partial.round.round_id !== roundId) {
+    partial.round = null;
+    keepFinalized = false;
+  }
+  partial.finalized = keepFinalized;
   publishSnapshot(partial);
   const galleryR = await readJson("get_gallery", []);
   partial.gallery = galleryR.data;
-  partial.finalized = computeFinalized();
+  partial.finalized = keepFinalized;
   publishSnapshot(partial);
   let roundOk = !roundId;
   if (roundId) {
@@ -23180,7 +23184,7 @@ async function refreshSnapshotOnce() {
       const roundR = await readJson("get_round", [roundId]);
       partial.round = roundR.data;
       roundOk = true;
-      partial.finalized = computeFinalized();
+      partial.finalized = keepFinalized;
       publishSnapshot(partial);
     } catch {
       roundOk = false;
@@ -23191,7 +23195,7 @@ async function refreshSnapshotOnce() {
     try {
       const rr = await readJson("get_round", [e.round_id]);
       partial.galleryRounds[e.round_id] = rr.data;
-      partial.finalized = computeFinalized();
+      partial.finalized = keepFinalized;
       publishSnapshot(partial);
     } catch {
     }

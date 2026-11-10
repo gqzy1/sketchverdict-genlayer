@@ -565,8 +565,15 @@ test('readback round 2: marker time is the snapshot assembly time, not the first
     'readBackAt is stamped at assembly time');
   assert.ok(once.indexOf('mapLimit(entries, 4,') < once.indexOf('partial.readBackAt = new Date().toISOString();'),
     'readBackAt is stamped after the gallery stage');
-  assert.ok(once.indexOf('partial.finalized = computeFinalized();') < once.indexOf('partial.readBackAt = new Date().toISOString();'),
-    'readBackAt is stamped after the flag is computed');
+  // The stamp and the flag flip live in the same final block: the
+  // marker never claims a time before the data was complete, and it
+  // never flips with a null timestamp. (The flag used to be computed
+  // at every publish, which let the marker flip at the round publish
+  // while readBackAt was still null — "· null" on the live site.)
+  const stampIdx = once.indexOf('if (freshFinalized) partial.readBackAt = new Date().toISOString();');
+  const flagIdx = once.indexOf('partial.finalized = computeFinalized();');
+  assert.ok(stampIdx !== -1 && flagIdx !== -1 && Math.abs(flagIdx - stampIdx) < 120,
+    'stamp and flag flip are adjacent in the final block');
   // The stale load-time stamp is gone: nothing assigns roomR.readAt as readBackAt.
   assert.ok(!app.includes('readBackAt: roomR.readAt'), 'readBackAt no longer takes the first read’s time');
   // Each single read's readAt envelope value is untouched.
@@ -613,9 +620,10 @@ test('readback round 3: new cycles merge into the snapshot — confirmed data is
     'gallery rounds are copied, never reset');
   assert.ok(once.includes('round: null,'),
     'the empty base (first load) still starts with round null');
-  // The merged flag is recomputed from the merged fields at every
-  // publish, so a partial cycle can never unfinalize a complete
-  // snapshot — and the flag is never the fresh AND alone.
+  // The merged flag is computed from the merged fields exactly once,
+  // at the final publish — never mid-refresh, so the marker cannot
+  // flip before readBackAt is stamped. Intermediate publishes keep
+  // the previous cycle's flag (see the flag-flip test below).
   assert.ok(once.includes('const computeFinalized = () => {'),
     'merged-flag helper exists');
   const cf = once.slice(once.indexOf('const computeFinalized'));
@@ -624,12 +632,15 @@ test('readback round 3: new cycles merge into the snapshot — confirmed data is
   assert.ok(cf.includes("if (rid && partial.round?.round_id !== rid) return false;"),
     'flag requires the round slot to match the current round id');
   assert.ok(once.includes('partial.finalized = computeFinalized();'),
-    'flag is recomputed at every publish');
+    'flag is computed from the merged fields at the final publish');
   // A retained round whose id no longer matches the fresh room is
   // dropped from the current-round slot (it stays in galleryRounds
-  // as a historical entry).
-  assert.ok(once.includes('if (partial.round && partial.round.round_id !== roundId) partial.round = null;'),
+  // as a historical entry), and the kept flag drops with it — fresh
+  // data contradicting the retained snapshot ends the old confirmation.
+  assert.ok(once.includes('if (partial.round && partial.round.round_id !== roundId) {'),
     'stale retained round is dropped from the current-round slot');
+  assert.ok(once.includes('keepFinalized = false;'),
+    'dropping the stale round also drops the kept flag');
   // readBackAt advances only on a fully-fresh cycle, so a retained
   // value never gets a fresh timestamp it did not earn.
   assert.ok(once.includes('if (freshFinalized) partial.readBackAt = new Date().toISOString();'),
@@ -698,6 +709,43 @@ test('readback round 3: every timestamp display reads snapshot.readBackAt (singl
   const stamps = app.split('\n').filter((l) => l.includes('readBackAt = new Date().toISOString();'));
   assert.equal(stamps.length, 1, 'readBackAt is stamped in exactly one place: ' + stamps.join(' | '));
   assert.ok(!app.includes('readBackAt: roomR.readAt'), 'no stale first-read timestamp');
+});
+
+test('readback round 3: the flag flips exactly once, at the final publish, together with readBackAt', () => {
+  const app = read('site/src/app.js');
+  const onceStart = app.indexOf('async function refreshSnapshotOnce');
+  const onceEnd = app.indexOf('async function maybeAutoReveal', onceStart);
+  const once = app.slice(onceStart, onceEnd);
+  // Regression: the merged flag used to be recomputed at every publish,
+  // so the marker flipped at the round publish while readBackAt was
+  // still null — the live site showed "✓ Read from FINALIZED Studionet
+  // state · null" with the gallery still unconfirmed.
+  const flagComputes = once.split('partial.finalized = computeFinalized();').length - 1;
+  assert.equal(flagComputes, 1, 'the merged flag is computed exactly once per cycle');
+  const finalCompute = once.indexOf('partial.finalized = computeFinalized();');
+  const stamp = once.indexOf('if (freshFinalized) partial.readBackAt = new Date().toISOString();');
+  assert.ok(stamp !== -1 && stamp < finalCompute, 'the stamp and the flag flip are in the same final block');
+  assert.ok(once.indexOf('publishSnapshot(partial);', finalCompute) - finalCompute < 80,
+    'the flag flip is immediately followed by its publish');
+  // Every earlier publish keeps the previous cycle's flag instead of
+  // recomputing it — a retry over a complete snapshot never
+  // unfinalizes the UI while it re-reads, and first load stays
+  // unconfirmed until the assembly is complete.
+  const keeps = once.split('partial.finalized = keepFinalized;').length - 1;
+  assert.equal(keeps, 4, 'four intermediate publishes keep the previous flag: ' + keeps);
+  assert.ok(once.includes('let keepFinalized = prev?.finalized === true;'),
+    'the kept flag starts from the previous snapshot');
+  assert.ok(once.includes('keepFinalized = false;'),
+    'the kept flag drops when fresh data contradicts the retained round');
+  // The round publish — the one that used to flip early — must not
+  // recompute the flag.
+  const roundPub = once.indexOf("const roundR = await readJson('get_round', [roundId]);");
+  const roundPubEnd = once.indexOf('publishSnapshot(partial);', roundPub);
+  assert.ok(!once.slice(roundPub, roundPubEnd).includes('computeFinalized()'),
+    'the round publish does not recompute the flag');
+  // No assignment ever wipes the flag to false mid-cycle.
+  assert.ok(!once.includes('partial.finalized = false;'),
+    'no mid-cycle wipe of the flag');
 });
 
 test('read path smoke: gen_call latest-final against the live evidence contract (read-only)', async () => {
