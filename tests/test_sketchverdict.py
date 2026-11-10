@@ -118,11 +118,18 @@ def _contract_interface(cls):
     return Wrapper
 
 
+def _write_decorator(f):
+    return f
+
+
+_write_decorator.payable = _write_decorator
+
+
 def load_contract(web, llm):
     gl = types.SimpleNamespace(
         Contract=object,
         public=types.SimpleNamespace(
-            write=lambda f: f,
+            write=_write_decorator,
             view=lambda f: f),
         evm=types.SimpleNamespace(contract_interface=_contract_interface),
         message=types.SimpleNamespace(sender_address="0x0", value=0),
@@ -206,6 +213,22 @@ class ContractTestCase(unittest.TestCase):
     def settle(self, round_id, sender=GUESSER_A):
         self.send(sender, 0)
         return json.loads(self.c.settle(round_id))
+
+
+class PayableMarkerTest(ContractTestCase):
+    def test_payable_methods_marked_payable(self):
+        """Regression: on Studionet a value-bearing call to a method
+        without @gl.public.write.payable fails at method resolution
+        ('called non-payable method ... with non-zero value') and the
+        value strands in the contract. The three value-taking entry
+        points must carry the marker; withdraw stays plain write."""
+        src = open(CONTRACT).read()
+        for name in ("start_round", "submit_guess", "challenge"):
+            self.assertIn("@gl.public.write.payable\n    def %s(" % name, src)
+        for name in ("submit_drawing", "reveal_and_auto_settle", "settle",
+                     "trigger_timeout_auto_settle", "withdraw"):
+            self.assertIn("@gl.public.write\n    def %s(" % name, src)
+            self.assertNotIn("@gl.public.write.payable\n    def %s(" % name, src)
 
 
 class CodecTest(ContractTestCase):

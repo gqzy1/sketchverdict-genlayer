@@ -660,7 +660,7 @@ class SketchVerdict(gl.Contract):
 
     # -- writes ----------------------------------------------------------
 
-    @gl.public.write
+    @gl.public.write.payable
     def start_round(self, round_id, concept_commit, category_hint,
                     drawing_duration_min, guessing_duration_min) -> str:
         try:
@@ -865,7 +865,7 @@ class SketchVerdict(gl.Contract):
             "reveal_deadline_minute": rnd["reveal_deadline_minute"],
         })
 
-    @gl.public.write
+    @gl.public.write.payable
     def submit_guess(self, round_id, guess_text) -> str:
         try:
             return self._submit_guess_inner(round_id, guess_text)
@@ -1032,7 +1032,7 @@ class SketchVerdict(gl.Contract):
             "payouts_pending_settle": True,
         })
 
-    @gl.public.write
+    @gl.public.write.payable
     def challenge(self, round_id, corrected_hash) -> str:
         try:
             return self._challenge_inner(round_id, corrected_hash)
