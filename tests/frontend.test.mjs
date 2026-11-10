@@ -88,12 +88,15 @@ test('Gate 11 structural: the finalized flag is stamped only inside readFinal', 
     'readJson threads readFinal’s flag, it does not stamp its own');
   // The snapshot is assembled as the `partial` object (published stage
   // by stage through publishSnapshot) and carries the threaded flag.
-  const snapStart = app.indexOf('const partial = { room:');
+  // Round 3: the partial starts as a COPY of the previous snapshot
+  // (merge, never replace), so a later partial cycle can never wipe
+  // confirmed data — the flag is recomputed from the merged fields.
+  const snapStart = app.indexOf('const partial = prev ? {');
   assert.ok(snapStart !== -1, 'snapshot assembly found');
   assert.ok(app.slice(snapStart, snapStart + 400).includes('finalized'),
     'snapshot carries the threaded finalized flag');
-  assert.ok(app.includes('partial.finalized = finalized;'),
-    'the assembled snapshot takes the AND of the constituent flags');
+  assert.ok(app.includes('partial.finalized = computeFinalized();'),
+    'the assembled snapshot takes the merged-fields completeness flag');
   assert.ok(app.includes('finalized: snapshot.finalized'),
     'exportRoundDossier consumes snapshot.finalized');
   const exStart = app.indexOf('function exportRoundDossier');
@@ -432,10 +435,15 @@ test('readback resilience: partial render — round failure keeps room + gallery
   assert.ok(roundSlice.includes("readJson('get_round'"), 'guarded read is the current round');
   assert.ok(roundSlice.includes('catch'), 'round failure is caught, not thrown');
   assert.ok(roundSlice.includes('roundOk = false'), 'a failed round read marks the round not-ok');
-  // The snapshot flag is the AND of every constituent — a failed round
-  // forces it false, so the marker, verdict displays and export stay closed.
-  assert.ok(once.includes('let finalized = roomR.finalized && galleryR.finalized && roundOk'),
-    'finalized AND includes the round-ok flag');
+  // The fresh-constituent AND (this cycle's reads only) drives the
+  // readBackAt stamp; the snapshot flag itself is the merged
+  // completeness (every presented field read from latest-final), so a
+  // failed round read on a first load still forces it false — the
+  // marker, verdict displays and export stay closed.
+  assert.ok(once.includes('let freshFinalized = roomR.finalized && galleryR.finalized && roundOk'),
+    'fresh-constituent AND includes the round-ok flag');
+  assert.ok(once.includes('partial.finalized = computeFinalized();'),
+    'snapshot flag is recomputed from the merged fields');
   // The partial snapshot starts with round null and only the successful
   // read assigns it, so a failed round read leaves round null.
   assert.ok(once.includes('round: null,'), 'partial snapshot starts with round null');
@@ -523,7 +531,7 @@ test('readback round 2: progressive rendering — each stage publishes its parti
     'room publishes before the gallery read starts');
   assert.ok(once.indexOf('partial.gallery = galleryR.data;') < once.indexOf('mapLimit(entries, 4,'),
     'gallery publishes before the per-entry reads start');
-  assert.ok(once.indexOf('partial.galleryRounds[e.round_id] = rr.data;') < once.indexOf('partial.finalized = finalized;'),
+  assert.ok(once.indexOf('partial.galleryRounds[e.round_id] = rr.data;') < once.indexOf('partial.readBackAt = new Date().toISOString();'),
     'cards publish before the final assembly');
   // Verdict displays still gate on the full readback: the stamp/canvas
   // reads snapshot.round only through readbackOk().
@@ -557,12 +565,139 @@ test('readback round 2: marker time is the snapshot assembly time, not the first
     'readBackAt is stamped at assembly time');
   assert.ok(once.indexOf('mapLimit(entries, 4,') < once.indexOf('partial.readBackAt = new Date().toISOString();'),
     'readBackAt is stamped after the gallery stage');
-  assert.ok(once.indexOf('partial.finalized = finalized;') < once.indexOf('partial.readBackAt = new Date().toISOString();'),
+  assert.ok(once.indexOf('partial.finalized = computeFinalized();') < once.indexOf('partial.readBackAt = new Date().toISOString();'),
     'readBackAt is stamped after the flag is computed');
   // The stale load-time stamp is gone: nothing assigns roomR.readAt as readBackAt.
   assert.ok(!app.includes('readBackAt: roomR.readAt'), 'readBackAt no longer takes the first read’s time');
   // Each single read's readAt envelope value is untouched.
   assert.ok(once.includes('partial.readAt = roomR.readAt;'), 'room readAt envelope is kept');
+});
+
+test('readback round 3: success notice is gated on snapshot.finalized (no false FINALIZED notice)', () => {
+  const app = read('site/src/app.js');
+  // The b2 finding (verification report #5): a partial success after a
+  // retry used to show "✓ 已读回 FINALIZED" while the marker said
+  // UNCONFIRMED, because the notice fired whenever attempt > 0.
+  const wrapStart = app.indexOf('async function refreshSnapshot()');
+  const wrapEnd = app.indexOf('async function refreshSnapshotOnce', wrapStart);
+  const wrap = app.slice(wrapStart, wrapEnd);
+  // The notice is reconciled on EVERY successful return, not only after
+  // retries — the notice is the only timestamp display not re-rendered
+  // from the snapshot on every render, so gating it on attempt > 0 let
+  // it go stale beside the marker (the "two markers disagree" report).
+  assert.ok(!wrap.includes('if (attempt > 0) setNotice'),
+    'the notice is no longer gated on attempt > 0');
+  assert.ok(wrap.includes('if (snapshot?.finalized) setNotice('),
+    'FINALIZED notice appears only when the snapshot is actually finalized');
+  assert.ok(wrap.includes("t(lang, 'readbackOk')"), 'the gated notice is the readbackOk text');
+  assert.ok(wrap.includes('else clearNotice();'),
+    'a partial success clears any stale retry/error notice');
+  // clearNotice restores the bar to its initial empty state (text +
+  // kind), it does not leave an empty coloured bar behind.
+  const cnStart = app.indexOf('function clearNotice()');
+  assert.ok(cnStart !== -1, 'clearNotice helper exists');
+  const cn = app.slice(cnStart, app.indexOf('\n}\n', cnStart));
+  assert.ok(cn.includes("n.textContent = '';"), 'clearNotice empties the text');
+  assert.ok(cn.includes("removeAttribute('data-kind')"), 'clearNotice removes the kind');
+});
+
+test('readback round 3: new cycles merge into the snapshot — confirmed data is never wiped', () => {
+  const app = read('site/src/app.js');
+  const onceStart = app.indexOf('async function refreshSnapshotOnce');
+  const onceEnd = app.indexOf('async function maybeAutoReveal', onceStart);
+  const once = app.slice(onceStart, onceEnd);
+  // The partial starts as a COPY of the previous snapshot, not an
+  // empty object: a later cycle can only add confirmed data.
+  assert.ok(once.includes('const prev = snapshot;'), 'previous snapshot is kept as the merge base');
+  assert.ok(once.includes('galleryRounds: { ...prev.galleryRounds }'),
+    'gallery rounds are copied, never reset');
+  assert.ok(once.includes('round: null,'),
+    'the empty base (first load) still starts with round null');
+  // The merged flag is recomputed from the merged fields at every
+  // publish, so a partial cycle can never unfinalize a complete
+  // snapshot — and the flag is never the fresh AND alone.
+  assert.ok(once.includes('const computeFinalized = () => {'),
+    'merged-flag helper exists');
+  const cf = once.slice(once.indexOf('const computeFinalized'));
+  assert.ok(cf.includes('if (!partial.room || !partial.gallery) return false;'),
+    'flag requires room and gallery');
+  assert.ok(cf.includes("if (rid && partial.round?.round_id !== rid) return false;"),
+    'flag requires the round slot to match the current round id');
+  assert.ok(once.includes('partial.finalized = computeFinalized();'),
+    'flag is recomputed at every publish');
+  // A retained round whose id no longer matches the fresh room is
+  // dropped from the current-round slot (it stays in galleryRounds
+  // as a historical entry).
+  assert.ok(once.includes('if (partial.round && partial.round.round_id !== roundId) partial.round = null;'),
+    'stale retained round is dropped from the current-round slot');
+  // readBackAt advances only on a fully-fresh cycle, so a retained
+  // value never gets a fresh timestamp it did not earn.
+  assert.ok(once.includes('if (freshFinalized) partial.readBackAt = new Date().toISOString();'),
+    'readBackAt advances only when every fresh constituent succeeded');
+  assert.ok(!once.includes('\n  partial.readBackAt = new Date().toISOString();'),
+    'no unconditional readBackAt stamp at assembly');
+});
+
+test('readback round 3: the 30s timer stops once the snapshot is complete; holes get a light backfill', () => {
+  const app = read('site/src/app.js');
+  // The unconditional 30s poll used to re-run a full refresh every
+  // cycle and wipe the UI (the ~2-minute flap). Now it only fires
+  // while the snapshot is not complete.
+  const initStart = app.indexOf('setInterval(() => {');
+  assert.ok(initStart !== -1, '30s interval found');
+  const interval = app.slice(initStart, app.indexOf('}, 30000);', initStart));
+  assert.ok(interval.includes('snapshotComplete()'), 'interval checks completeness');
+  assert.ok(interval.includes('backfillMissing()'), 'holes get a light backfill');
+  assert.ok(!interval.includes('refreshSnapshot();\n  }, 30000'),
+    'no unconditional full refresh in the interval');
+  // snapshotComplete: FINALIZED plus no holes.
+  const scStart = app.indexOf('function snapshotComplete()');
+  assert.ok(scStart !== -1, 'snapshotComplete helper exists');
+  const sc = app.slice(scStart, app.indexOf('\n}\n', scStart));
+  assert.ok(sc.includes('if (!readbackOk()) return false;'), 'complete requires FINALIZED');
+  assert.ok(sc.includes('entries.some((e) => !snapshot.galleryRounds[e.round_id])'),
+    'complete requires every gallery entry to have its round data');
+  assert.ok(sc.includes("if (roundId && snapshot?.round?.round_id !== roundId) return false;"),
+    'complete requires the current round to be present');
+  // backfillMissing: reads ONLY the missing entries, bounded to 4,
+  // and merges them — it never touches the rest of the snapshot.
+  const bfStart = app.indexOf('async function backfillMissing()');
+  assert.ok(bfStart !== -1, 'backfillMissing helper exists');
+  const bf = app.slice(bfStart, app.indexOf('\n}\n', bfStart));
+  assert.ok(bf.includes('if (readingBack || !snapshot?.finalized) return;'),
+    'backfill only runs on a FINALIZED snapshot');
+  assert.ok(bf.includes('.filter((e) => !next.galleryRounds[e.round_id])'),
+    'backfill selects only the missing entries');
+  assert.ok(bf.includes('mapLimit(missing, 4,'), 'backfill reads with bounded concurrency 4');
+  assert.ok(!bf.includes('snapshot ='), 'backfill publishes through publishSnapshot only');
+  // The full refresh reads holes first, so a backfill cycle spends its
+  // concurrency on the missing rounds.
+  const onceStart = app.indexOf('async function refreshSnapshotOnce');
+  const onceEnd = app.indexOf('async function maybeAutoReveal', onceStart);
+  const once = app.slice(onceStart, onceEnd);
+  assert.ok(once.includes('.sort((a, b)'), 'gallery entries are ordered before the bounded read');
+  assert.ok(once.indexOf('.sort((a, b)') < once.indexOf('mapLimit(entries, 4,'),
+    'holes-first ordering happens before the gallery reads');
+});
+
+test('readback round 3: every timestamp display reads snapshot.readBackAt (single source of truth)', () => {
+  const app = read('site/src/app.js');
+  // Marker, last-readback, Machine view, notice and dossier all read
+  // the same snapshot.readBackAt — there is no second timestamp source
+  // left for two displays to disagree about.
+  assert.ok(app.includes('`✓ Read from FINALIZED Studionet state · ${snapshot.readBackAt}`'),
+    'marker reads snapshot.readBackAt');
+  assert.ok(app.includes("snapshot?.finalized ? snapshot.readBackAt : t(lang, 'neverReadBack')"),
+    'last-readback reads snapshot.readBackAt');
+  assert.ok(app.includes('READBACK ...... FINALIZED @ ${snapshot.readBackAt}'),
+    'Machine view reads snapshot.readBackAt');
+  assert.ok(app.includes('readback_at: snapshot.readBackAt'),
+    'dossier reads snapshot.readBackAt');
+  // The readBackAt stamp is written in exactly one place (the
+  // conditional fresh stamp at assembly) — no second writer exists.
+  const stamps = app.split('\n').filter((l) => l.includes('readBackAt = new Date().toISOString();'));
+  assert.equal(stamps.length, 1, 'readBackAt is stamped in exactly one place: ' + stamps.join(' | '));
+  assert.ok(!app.includes('readBackAt: roomR.readAt'), 'no stale first-read timestamp');
 });
 
 test('read path smoke: gen_call latest-final against the live evidence contract (read-only)', async () => {

@@ -220,9 +220,16 @@ async function refreshSnapshot() {
     for (let attempt = 0; attempt < READBACK_MAX_ATTEMPTS; attempt++) {
       try {
         await refreshSnapshotOnce();
-        // Success (full or partial) — a retry notice from an earlier
-        // attempt must not linger as if the readback were still failing.
-        if (attempt > 0) setNotice(`${t(lang, 'readbackOk')} · ${snapshot.readBackAt}`, 'ok');
+        // Reconcile the notice with the outcome on EVERY success. The
+        // notice is the only timestamp display not re-rendered from
+        // the snapshot on every render, so a success notice written
+        // by an earlier retry used to survive beside an UNCONFIRMED
+        // marker — the "two markers disagree" report. A FINALIZED
+        // notice may only appear when the snapshot is actually
+        // finalized; a partial success clears any stale retry/error
+        // notice instead of claiming success.
+        if (snapshot?.finalized) setNotice(`${t(lang, 'readbackOk')} · ${snapshot.readBackAt}`, 'ok');
+        else clearNotice();
         return;
       } catch (error) {
         lastError = error;
@@ -245,25 +252,55 @@ async function refreshSnapshot() {
 }
 
 async function refreshSnapshotOnce() {
-  // Stage by stage, each successful read publishes a growing partial
-  // snapshot (finalized === false until every constituent has landed),
-  // so the page shows room facts within ~1s and gallery cards as their
-  // reads land, instead of waiting for all ~13 calls to finish. A
-  // refresh that throws before its first successful read never reaches
-  // a publish, so the previous snapshot stays untouched.
-  const partial = { room: null, round: null, gallery: null, galleryRounds: {},
-    stats: null, finalized: false, readAt: null, readBackAt: null };
+  // Merge, never replace. The new cycle starts from a COPY of the
+  // current snapshot, so a cycle that fails to re-read a field keeps
+  // the old (latest-final) value instead of wiping it: confirmation
+  // can only rise, never fall, and the UI never flips back to
+  // unconfirmed mid-refresh. Only a field a fresh read actually
+  // returns overwrites its old value. (Round 2's fresh partial
+  // replaced the snapshot wholesale, so every 30s cycle re-published
+  // finalized=false and the UI flapped.)
+  const prev = snapshot;
+  const partial = prev ? {
+    room: prev.room, round: prev.round, gallery: prev.gallery,
+    galleryRounds: { ...prev.galleryRounds }, stats: prev.stats,
+    finalized: false, readAt: prev.readAt, readBackAt: prev.readBackAt,
+  } : {
+    room: null, round: null, gallery: null, galleryRounds: {},
+    stats: null, finalized: false, readAt: null, readBackAt: null,
+  };
+  // The merged flag: every field the snapshot presents must have been
+  // read from latest-final. Fields hold only latest-final reads
+  // (fresh this cycle or retained), so the flag is true exactly when
+  // no required field is missing — a later partial cycle can never
+  // unfinalize a complete snapshot.
+  const computeFinalized = () => {
+    if (!partial.room || !partial.gallery) return false;
+    const rid = currentRoundId || partial.room?.current_round_id || '';
+    if (rid && partial.round?.round_id !== rid) return false;
+    if (wallet?.address && !partial.stats) return false;
+    return true;
+  };
   const roomR = await readJson('get_room_state', []);
   partial.room = roomR.data;
   partial.readAt = roomR.readAt;
+  // The retained round belongs to the previous cycle: if the room now
+  // names a different current round, the retained round is stale for
+  // the current-round slot — drop it (it stays in galleryRounds as a
+  // historical entry) so the slot shows unconfirmed until its fresh
+  // read lands.
+  const roundId = currentRoundId || roomR.data?.current_round_id || '';
+  if (partial.round && partial.round.round_id !== roundId) partial.round = null;
+  partial.finalized = computeFinalized();
   publishSnapshot(partial);
   const galleryR = await readJson('get_gallery', []);
   partial.gallery = galleryR.data;
+  partial.finalized = computeFinalized();
   publishSnapshot(partial);
-  const roundId = currentRoundId || roomR.data?.current_round_id || '';
   // Partial readback: the current-round read may fail while room + gallery
-  // succeeded. Do not abort — keep room + gallery, leave round null,
-  // and force the snapshot flag false: a failed constituent can never
+  // succeeded. Do not abort — keep room + gallery (and any retained
+  // round whose id still matches), and force the snapshot flag false
+  // when the round slot is empty: a failed constituent can never
   // count as FINALIZED, so the marker, the verdict displays and the
   // export gate all stay closed.
   let roundOk = !roundId;
@@ -272,38 +309,48 @@ async function refreshSnapshotOnce() {
       const roundR = await readJson('get_round', [roundId]);
       partial.round = roundR.data;
       roundOk = true;
+      partial.finalized = computeFinalized();
       publishSnapshot(partial);
     } catch { roundOk = false; }
   }
   // The gallery's per-round reads are independent: run them with a
-  // bounded concurrency of 4. A card publishes as its own read lands —
-  // its verdict/image come only from that FINALIZED per-round read (see
-  // galleryCard) — and a failed entry simply keeps no card data (as in
-  // round 1); it does not unfinalize the snapshot.
-  const entries = galleryR.data?.entries || [];
+  // bounded concurrency of 4. Holes first: entries the merged snapshot
+  // still lacks are read before entries it already holds, so a
+  // backfill cycle spends its concurrency on the missing rounds. A
+  // card publishes as its own read lands — its verdict/image come only
+  // from that FINALIZED per-round read (see galleryCard) — and a failed
+  // entry simply keeps its retained value (or no card data on first
+  // load); it does not unfinalize the snapshot.
+  const entries = [...(galleryR.data?.entries || [])].sort((a, b) =>
+    (partial.galleryRounds[a.round_id] ? 1 : 0) - (partial.galleryRounds[b.round_id] ? 1 : 0));
   await mapLimit(entries, 4, async (e) => {
     try {
       const rr = await readJson('get_round', [e.round_id]);
       partial.galleryRounds[e.round_id] = rr.data;
+      partial.finalized = computeFinalized();
       publishSnapshot(partial);
     } catch { /* keep gallery entry without image */ }
   });
-  // The snapshot flag is the AND of every constituent latest-final read
-  // envelope — computed from readFinal's stamps only, never asserted here.
-  let finalized = roomR.finalized && galleryR.finalized && roundOk;
+  // Fresh-constituent AND (this cycle's reads only): it drives the
+  // readBackAt stamp, not the snapshot flag. The flag above is the
+  // merged completeness; the timestamp advances only when every fresh
+  // constituent succeeded, so a retained value never gets a fresh
+  // timestamp it did not earn.
+  let freshFinalized = roomR.finalized && galleryR.finalized && roundOk;
   if (wallet?.address) {
     try {
       const statsR = await readJson('get_player_stats', [wallet.address.toLowerCase()]);
       partial.stats = statsR.data;
-      finalized = finalized && statsR.finalized;
-    } catch { /* keep stats null */ }
+      freshFinalized = freshFinalized && statsR.finalized;
+    } catch { freshFinalized = false; }
   }
-  partial.finalized = finalized;
-  // readBackAt is when this snapshot was ASSEMBLED, not when the first
-  // read landed — the marker must not claim a time minutes before the
-  // data was actually complete. Each single read's readAt envelope value
-  // is untouched.
-  partial.readBackAt = new Date().toISOString();
+  // readBackAt is when this snapshot was ASSEMBLED from fresh reads,
+  // not when the first read landed — the marker must not claim a time
+  // minutes before the data was actually complete. Each single read's
+  // readAt envelope value is untouched. On a partial cycle the stamp
+  // stays at the last fully-fresh completion.
+  if (freshFinalized) partial.readBackAt = new Date().toISOString();
+  partial.finalized = computeFinalized();
   publishSnapshot(partial);
   const fired = await maybeAutoReveal();
   if (fired) setTimeout(() => refreshSnapshot(), 5000); // re-read after the auto-reveal settles
@@ -337,6 +384,52 @@ async function maybeAutoReveal() {
     }
   } catch { /* clock unavailable — leave the manual button */ }
   return false;
+}
+
+// A snapshot is complete when it is FINALIZED and has no holes: every
+// gallery entry has its round data, the current round (if any) is
+// present, and player stats are present when a wallet is connected.
+// Only a complete snapshot stops the 30s auto re-read — the
+// unconditional poll used to re-run a full refresh every cycle and
+// wipe the UI, which is what made it flap every ~2 minutes.
+function snapshotComplete() {
+  if (!readbackOk()) return false;
+  const entries = snapshot?.gallery?.entries || [];
+  if (entries.some((e) => !snapshot.galleryRounds[e.round_id])) return false;
+  const roundId = currentRoundId || snapshot?.room?.current_round_id || '';
+  if (roundId && snapshot?.round?.round_id !== roundId) return false;
+  if (wallet?.address && !snapshot?.stats) return false;
+  return true;
+}
+
+// Light backfill: re-read ONLY the missing gallery entries and merge
+// them into the snapshot. The 30s timer uses this when the snapshot is
+// FINALIZED but has holes — a full refresh would burn ~13 calls per
+// cycle against the rate-limited RPC for a 1–2 entry hole. Entries
+// that keep failing simply stay missing (honest unconfirmed).
+async function backfillMissing() {
+  if (readingBack || !snapshot?.finalized) return;
+  readingBack = true;
+  try {
+    const base = snapshot;
+    const next = {
+      room: base.room, round: base.round, gallery: base.gallery,
+      galleryRounds: { ...base.galleryRounds }, stats: base.stats,
+      finalized: base.finalized, readAt: base.readAt, readBackAt: base.readBackAt,
+    };
+    const missing = (base.gallery?.entries || []).filter((e) => !next.galleryRounds[e.round_id]);
+    await mapLimit(missing, 4, async (e) => {
+      try {
+        const rr = await readJson('get_round', [e.round_id]);
+        next.galleryRounds[e.round_id] = rr.data;
+        publishSnapshot(next);
+      } catch { /* stays missing — honest unconfirmed */ }
+    });
+    publishSnapshot(next);
+  } finally {
+    readingBack = false;
+    renderAll();
+  }
 }
 
 // ------------------------------------------------------------------
@@ -664,6 +757,14 @@ function setNotice(msg, kind) {
   if (!n) return;
   n.textContent = msg;
   n.dataset.kind = kind || 'info';
+}
+// Clear the notice entirely (text + kind): the bar returns to its
+// initial empty state instead of showing a stale claim.
+function clearNotice() {
+  const n = $('#notice');
+  if (!n) return;
+  n.textContent = '';
+  n.removeAttribute('data-kind');
 }
 function renderStatus() {
   const m = $('#readback-marker');
@@ -1206,7 +1307,15 @@ function bindEvents() {
     currentRoundId = e.target.value.trim();
     refreshSnapshot();
   });
-  setInterval(() => { if (!document.hidden) refreshSnapshot(); }, 30000);
+  setInterval(() => {
+    if (document.hidden || readingBack) return;
+    // Auto re-read only while the snapshot is not complete: a complete
+    // snapshot must not be re-polled. A FINALIZED snapshot with holes
+    // gets a light backfill instead of a full refresh; anything else
+    // gets a full retry.
+    if (!readbackOk()) { refreshSnapshot(); return; }
+    if (!snapshotComplete()) { backfillMissing(); return; }
+  }, 30000);
   setInterval(updateTimeoutButton, 15000);
 }
 

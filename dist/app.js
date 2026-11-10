@@ -23119,7 +23119,8 @@ async function refreshSnapshot() {
     for (let attempt = 0; attempt < READBACK_MAX_ATTEMPTS; attempt++) {
       try {
         await refreshSnapshotOnce();
-        if (attempt > 0) setNotice(`${t(lang, "readbackOk")} \xB7 ${snapshot.readBackAt}`, "ok");
+        if (snapshot?.finalized) setNotice(`${t(lang, "readbackOk")} \xB7 ${snapshot.readBackAt}`, "ok");
+        else clearNotice();
         return;
       } catch (error) {
         lastError = error;
@@ -23135,7 +23136,17 @@ async function refreshSnapshot() {
   }
 }
 async function refreshSnapshotOnce() {
-  const partial = {
+  const prev = snapshot;
+  const partial = prev ? {
+    room: prev.room,
+    round: prev.round,
+    gallery: prev.gallery,
+    galleryRounds: { ...prev.galleryRounds },
+    stats: prev.stats,
+    finalized: false,
+    readAt: prev.readAt,
+    readBackAt: prev.readBackAt
+  } : {
     room: null,
     round: null,
     gallery: null,
@@ -23145,45 +23156,58 @@ async function refreshSnapshotOnce() {
     readAt: null,
     readBackAt: null
   };
+  const computeFinalized = () => {
+    if (!partial.room || !partial.gallery) return false;
+    const rid = currentRoundId || partial.room?.current_round_id || "";
+    if (rid && partial.round?.round_id !== rid) return false;
+    if (wallet?.address && !partial.stats) return false;
+    return true;
+  };
   const roomR = await readJson("get_room_state", []);
   partial.room = roomR.data;
   partial.readAt = roomR.readAt;
+  const roundId = currentRoundId || roomR.data?.current_round_id || "";
+  if (partial.round && partial.round.round_id !== roundId) partial.round = null;
+  partial.finalized = computeFinalized();
   publishSnapshot(partial);
   const galleryR = await readJson("get_gallery", []);
   partial.gallery = galleryR.data;
+  partial.finalized = computeFinalized();
   publishSnapshot(partial);
-  const roundId = currentRoundId || roomR.data?.current_round_id || "";
   let roundOk = !roundId;
   if (roundId) {
     try {
       const roundR = await readJson("get_round", [roundId]);
       partial.round = roundR.data;
       roundOk = true;
+      partial.finalized = computeFinalized();
       publishSnapshot(partial);
     } catch {
       roundOk = false;
     }
   }
-  const entries = galleryR.data?.entries || [];
+  const entries = [...galleryR.data?.entries || []].sort((a, b) => (partial.galleryRounds[a.round_id] ? 1 : 0) - (partial.galleryRounds[b.round_id] ? 1 : 0));
   await mapLimit(entries, 4, async (e) => {
     try {
       const rr = await readJson("get_round", [e.round_id]);
       partial.galleryRounds[e.round_id] = rr.data;
+      partial.finalized = computeFinalized();
       publishSnapshot(partial);
     } catch {
     }
   });
-  let finalized = roomR.finalized && galleryR.finalized && roundOk;
+  let freshFinalized = roomR.finalized && galleryR.finalized && roundOk;
   if (wallet?.address) {
     try {
       const statsR = await readJson("get_player_stats", [wallet.address.toLowerCase()]);
       partial.stats = statsR.data;
-      finalized = finalized && statsR.finalized;
+      freshFinalized = freshFinalized && statsR.finalized;
     } catch {
+      freshFinalized = false;
     }
   }
-  partial.finalized = finalized;
-  partial.readBackAt = (/* @__PURE__ */ new Date()).toISOString();
+  if (freshFinalized) partial.readBackAt = (/* @__PURE__ */ new Date()).toISOString();
+  partial.finalized = computeFinalized();
   publishSnapshot(partial);
   const fired = await maybeAutoReveal();
   if (fired) setTimeout(() => refreshSnapshot(), 5e3);
@@ -23222,6 +23246,45 @@ async function maybeAutoReveal() {
   } catch {
   }
   return false;
+}
+function snapshotComplete() {
+  if (!readbackOk()) return false;
+  const entries = snapshot?.gallery?.entries || [];
+  if (entries.some((e) => !snapshot.galleryRounds[e.round_id])) return false;
+  const roundId = currentRoundId || snapshot?.room?.current_round_id || "";
+  if (roundId && snapshot?.round?.round_id !== roundId) return false;
+  if (wallet?.address && !snapshot?.stats) return false;
+  return true;
+}
+async function backfillMissing() {
+  if (readingBack || !snapshot?.finalized) return;
+  readingBack = true;
+  try {
+    const base = snapshot;
+    const next = {
+      room: base.room,
+      round: base.round,
+      gallery: base.gallery,
+      galleryRounds: { ...base.galleryRounds },
+      stats: base.stats,
+      finalized: base.finalized,
+      readAt: base.readAt,
+      readBackAt: base.readBackAt
+    };
+    const missing = (base.gallery?.entries || []).filter((e) => !next.galleryRounds[e.round_id]);
+    await mapLimit(missing, 4, async (e) => {
+      try {
+        const rr = await readJson("get_round", [e.round_id]);
+        next.galleryRounds[e.round_id] = rr.data;
+        publishSnapshot(next);
+      } catch {
+      }
+    });
+    publishSnapshot(next);
+  } finally {
+    readingBack = false;
+    renderAll();
+  }
 }
 function envelope(sender, to, data) {
   const entry = chain.consensusMainContract.abi.find(
@@ -23582,6 +23645,12 @@ function setNotice(msg, kind) {
   if (!n) return;
   n.textContent = msg;
   n.dataset.kind = kind || "info";
+}
+function clearNotice() {
+  const n = $("#notice");
+  if (!n) return;
+  n.textContent = "";
+  n.removeAttribute("data-kind");
 }
 function renderStatus() {
   const m = $("#readback-marker");
@@ -24119,7 +24188,15 @@ function bindEvents() {
     refreshSnapshot();
   });
   setInterval(() => {
-    if (!document.hidden) refreshSnapshot();
+    if (document.hidden || readingBack) return;
+    if (!readbackOk()) {
+      refreshSnapshot();
+      return;
+    }
+    if (!snapshotComplete()) {
+      backfillMissing();
+      return;
+    }
   }, 3e4);
   setInterval(updateTimeoutButton, 15e3);
 }
