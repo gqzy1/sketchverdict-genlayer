@@ -22343,6 +22343,11 @@ var STRINGS = {
     demoCase3: "CASE-3 \u76F4\u63A5\u5199\u5355\u8BCD VOLCANO\uFF08\u4F5C\u5F0A\u62E6\u622A\uFF09",
     demoCase4: "CASE-4 \u65E0\u5173\u56FE\uFF08\u89C6\u89C9\u4E0D\u7B26\uFF09",
     demoLoaded: "\u5DF2\u88C5\u586B\u6F14\u793A\u753B\u4F5C\uFF0CSHA-256 \u89C1\u753B\u5E03\u4E0B\u65B9",
+    demoShaMatch: "\u539F\u59CB SHA \u4E0E\u8BC1\u636E\u8BB0\u5F55\u4E00\u81F4",
+    canvasPresetBlank: "\u7A7A\u767D\u753B\u5E03 \u2014 \u5C1A\u672A\u4F5C\u753B",
+    canvasPresetDrawn: "\u672C\u5730\u4F5C\u753B \u2014 \u672A\u4E0A\u94FE\uFF08\u4EC5\u672C\u673A\uFF09",
+    canvasPresetDemo: "\u6F14\u793A\u753B\u4F5C \xB7 \u793A\u610F \u2014 \u975E\u94FE\u4E0A\u7ED3\u679C\uFF0C\u539F\u59CB SHA \u4E0E\u8BC1\u636E\u8BB0\u5F55\u4E00\u81F4",
+    noImage: "\u65E0\u56FE\u7247\uFF08\u672C\u8F6E\u672A\u63D0\u4EA4\u753B\u4F5C\uFF09",
     evidenceTitle: "\u8BC4\u5BA1\u8BC1\u636E",
     claimsTitle: "\u4E3B\u5F20",
     anchorsTitle: "\u951A\u70B9",
@@ -22402,7 +22407,6 @@ var STRINGS = {
     noGallery: "\u6682\u65E0\u5DF2\u7ED3\u7B97\u8F6E\u6B21\uFF08\u9700 FINALIZED \u8BFB\u56DE\u540E\u663E\u793A\uFF09",
     noGuesses: "\u6682\u65E0\u731C\u6D4B\uFF08\u9700 FINALIZED \u8BFB\u56DE\u540E\u663E\u793A\uFF09",
     loadDemo: "\u88C5\u586B",
-    demoShaMatch: "\u6F14\u793A\u753B\u4F5C SHA-256 \u4E0E\u8BC1\u636E\u8BB0\u5F55\u4E00\u81F4",
     demoShaMismatch: "\u6F14\u793A\u753B\u4F5C SHA-256 \u4E0E\u8BC1\u636E\u8BB0\u5F55\u4E0D\u4E00\u81F4\uFF0C\u5DF2\u62D2\u7EDD\u88C5\u586B",
     machineNote: "Machine \u89C6\u56FE\uFF1A\u7EAF\u6587\u672C\u952E\u503C\u7EC8\u7AEF\uFF0C\u5168\u90E8\u53D6\u81EA FINALIZED \u8BFB\u56DE\u3002",
     exportBlocked: "\u5BFC\u51FA\u5DF2\u62E6\u622A\uFF1A\u7B49\u5F85 FINALIZED \u94FE\u4E0A\u8BFB\u56DE\u4E14\u8F6E\u6B21 SETTLED",
@@ -22533,7 +22537,11 @@ var STRINGS = {
     demoCase3: "CASE-3 Word VOLCANO written out (cheat blocked)",
     demoCase4: "CASE-4 Unrelated image (visual miss)",
     demoLoaded: "Demo drawing loaded; SHA-256 shown below the canvas",
-    demoShaMatch: "Demo drawing SHA-256 matches the evidence record",
+    demoShaMatch: "Original SHA matches the evidence record",
+    canvasPresetBlank: "Blank canvas \u2014 nothing drawn yet",
+    canvasPresetDrawn: "Local drawing \u2014 not on-chain (this browser only)",
+    canvasPresetDemo: "Demo drawing \xB7 for illustration \u2014 not an on-chain result; original SHA matches the evidence record",
+    noImage: "No image (no drawing submitted this round)",
     demoShaMismatch: "Demo drawing SHA-256 does NOT match the evidence record \u2014 load refused",
     evidenceTitle: "Reviewer evidence",
     claimsTitle: "Claims",
@@ -22928,118 +22936,6 @@ var EVIDENCE_DATA = {
       "label": "R11:withdraw-zero",
       "hash": "0xc73b8c765a0616b6ac2f871e640f9c28f1d3968b1edc7167f6847d0b0c20b222"
     }
-  ],
-  "rounds": [
-    {
-      "id": "R1",
-      "concept": "bicycle",
-      "verdict": "DRAWING_MATCHES",
-      "reason": "VISUAL_MATCH_CONFIRMED",
-      "pot": "25",
-      "drawer": "12.5",
-      "guessers": "B 6.25, C 6.25",
-      "rollover": "0",
-      "fastest": "B"
-    },
-    {
-      "id": "R2",
-      "concept": "lighthouse",
-      "verdict": "DRAWING_MATCHES",
-      "reason": "VISUAL_MATCH_CONFIRMED",
-      "pot": "20",
-      "drawer": "10",
-      "guessers": "A 5, B 5",
-      "rollover": "0",
-      "fastest": "A"
-    },
-    {
-      "id": "R2b",
-      "concept": "lighthouse",
-      "verdict": "DRAWING_WEAK",
-      "reason": "VISUAL_WEAK_PARTIAL",
-      "pot": "20",
-      "drawer": "5",
-      "guessers": "A 2.5, B 2.5",
-      "rollover": "10",
-      "fastest": "A"
-    },
-    {
-      "id": "R3",
-      "concept": "volcano",
-      "verdict": "DRAWING_MISS",
-      "reason": "TEXT_CHEAT_DETECTED",
-      "pot": "25",
-      "drawer": "0",
-      "guessers": "A 0",
-      "rollover": "25",
-      "fastest": "\u2014"
-    },
-    {
-      "id": "R4",
-      "concept": "guitar",
-      "verdict": "DRAWING_MISS",
-      "reason": "VISUAL_MISS",
-      "pot": "40",
-      "drawer": "0",
-      "guessers": "\u2014",
-      "rollover": "40",
-      "fastest": "\u2014"
-    },
-    {
-      "id": "R5",
-      "concept": "bicycle",
-      "verdict": "DRAWING_MATCHES",
-      "reason": "VISUAL_MATCH_CONFIRMED",
-      "pot": "55",
-      "drawer": "27.5",
-      "guessers": "B 27.5",
-      "rollover": "0",
-      "fastest": "B"
-    },
-    {
-      "id": "R6",
-      "concept": "bicycle",
-      "verdict": "DRAWING_MATCHES",
-      "reason": "VISUAL_MATCH_CONFIRMED",
-      "pot": "20",
-      "drawer": "10",
-      "guessers": "B 10",
-      "rollover": "0",
-      "fastest": "B"
-    },
-    {
-      "id": "R7",
-      "concept": "crank",
-      "verdict": "DRAWING_MISS",
-      "reason": "DRAWER_DRAWING_TIMEOUT",
-      "pot": "\u2014",
-      "drawer": "0",
-      "guessers": "\u2014",
-      "rollover": "10",
-      "fastest": "\u2014"
-    },
-    {
-      "id": "R8",
-      "concept": "bicycle",
-      "verdict": "DRAWING_MISS",
-      "reason": "DRAWER_REVEAL_TIMEOUT",
-      "pot": "\u2014",
-      "drawer": "0",
-      "guessers": "refunded 5 each",
-      "rollover": "20",
-      "fastest": "\u2014"
-    },
-    {
-      "id": "R9",
-      "concept": "bicycle",
-      "verdict": "DRAWING_MATCHES",
-      "reason": "VISUAL_MATCH_CONFIRMED",
-      "pot": "26 + 1 wei",
-      "drawer": "13",
-      "guessers": "B 13",
-      "rollover": "1 wei",
-      "fastest": "B"
-    }
   ]
 };
 
@@ -23061,6 +22957,7 @@ var lang = localStorage.getItem("sv-lang") || "zh";
 var view = "human";
 var staticMode = new URLSearchParams(location.search).has("static") || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 var snapshot = null;
+var readbackOk = () => snapshot?.finalized === true;
 var readingBack = false;
 var wallet = null;
 var tempAccount = null;
@@ -23089,6 +22986,16 @@ function fmtGen(weiStr) {
     const frac = abs % GEN;
     const fracStr = frac.toString().padStart(18, "0").replace(/0+$/, "").slice(0, 6);
     return `${neg ? "-" : ""}${whole}${fracStr ? "." + fracStr : ""} GEN`;
+  } catch {
+    return t(lang, "unconfirmed");
+  }
+}
+function fmtGenExact(weiStr) {
+  try {
+    const w = BigInt(weiStr ?? "0");
+    const base = fmtGen(weiStr);
+    const sub = w % GEN % 10n ** 12n;
+    return sub === 0n ? base : `${base} + ${sub} wei`;
   } catch {
     return t(lang, "unconfirmed");
   }
@@ -23391,6 +23298,8 @@ var currentImageBytes = null;
 var currentImageB64 = "";
 var currentImageSha = "";
 var presetLoaded = null;
+var canvasContent = "blank";
+var demoOriginal = null;
 function initCanvas() {
   canvas = $("#draw-canvas");
   ctx = canvas.getContext("2d");
@@ -23398,6 +23307,8 @@ function initCanvas() {
   ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
+  canvasContent = "blank";
+  demoOriginal = null;
   const pos = (e) => {
     const rect = canvas.getBoundingClientRect();
     return {
@@ -23409,6 +23320,13 @@ function initCanvas() {
     if (canvas.dataset.locked === "1") return;
     e.preventDefault();
     canvas.setPointerCapture(e.pointerId);
+    if (canvasContent === "demo") {
+      canvasContent = "drawn";
+      demoOriginal = null;
+      presetLoaded = null;
+    } else if (canvasContent === "blank") {
+      canvasContent = "drawn";
+    }
     drawing = true;
     lastPt = pos(e);
     dot(lastPt);
@@ -23444,12 +23362,21 @@ function clearCanvas() {
   ctx.fillStyle = PAPER;
   ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
   presetLoaded = null;
+  canvasContent = "blank";
+  demoOriginal = null;
   updateExport();
 }
 function canvasToBlob() {
   return new Promise((resolve) => canvas.toBlob(resolve, "image/png"));
 }
 async function updateExport() {
+  if (canvasContent === "demo" && demoOriginal) {
+    currentImageBytes = b64decode(demoOriginal.b64);
+    currentImageB64 = demoOriginal.b64;
+    currentImageSha = demoOriginal.sha;
+    renderCanvasMeta();
+    return;
+  }
   const blob = await canvasToBlob();
   const buf = new Uint8Array(await blob.arrayBuffer());
   currentImageBytes = buf;
@@ -23458,9 +23385,25 @@ async function updateExport() {
   renderCanvasMeta();
 }
 function renderCanvasMeta() {
+  const preset = $("#canvas-preset");
+  if (canvasContent === "blank") {
+    $("#image-sha").textContent = t(lang, "unconfirmed");
+    $("#image-bytes").textContent = "\u2014";
+    $("#b64-size").textContent = "\u2014";
+    if (preset) preset.textContent = t(lang, "canvasPresetBlank");
+    return;
+  }
+  if (canvasContent === "demo" && demoOriginal) {
+    $("#image-sha").textContent = demoOriginal.sha;
+    $("#image-bytes").textContent = String(demoOriginal.bytes);
+    $("#b64-size").textContent = String(demoOriginal.b64.length);
+    if (preset) preset.textContent = `${t(lang, "canvasPresetDemo")} \xB7 ${demoOriginal.id}`;
+    return;
+  }
   $("#image-sha").textContent = currentImageSha || t(lang, "unconfirmed");
   $("#image-bytes").textContent = currentImageBytes ? String(currentImageBytes.length) : "\u2014";
   $("#b64-size").textContent = currentImageB64 ? String(currentImageB64.length) : "\u2014";
+  if (preset) preset.textContent = t(lang, "canvasPresetDrawn");
 }
 var DEMO_CASES = [
   {
@@ -23516,6 +23459,8 @@ async function loadDemoCase(c) {
     ctx.drawImage(img, 0, 0, CANVAS_SIZE, CANVAS_SIZE);
     URL.revokeObjectURL(url);
     presetLoaded = c.id;
+    canvasContent = "demo";
+    demoOriginal = { id: c.id, sha: c.sha, bytes: bytes.length, b64 };
     await updateExport();
     setNotice(`${t(lang, "demoLoaded")} \u2014 ${t(lang, "demoShaMatch")}`, "ok");
   } catch (e) {
@@ -23530,15 +23475,15 @@ function setNotice(msg, kind) {
 }
 function renderStatus() {
   const m = $("#readback-marker");
-  if (snapshot) {
+  if (snapshot?.finalized) {
     m.textContent = `\u2713 Read from FINALIZED Studionet state \xB7 ${snapshot.readBackAt}`;
     m.classList.add("ok");
   } else {
     m.textContent = t(lang, "readbackPending");
     m.classList.remove("ok");
   }
-  $("#last-readback").textContent = snapshot ? snapshot.readBackAt : t(lang, "neverReadBack");
-  $("#offline-banner").hidden = !!snapshot;
+  $("#last-readback").textContent = snapshot?.finalized ? snapshot.readBackAt : t(lang, "neverReadBack");
+  $("#offline-banner").hidden = readbackOk();
 }
 function renderWallet() {
   const cap = $("#wallet-capsule");
@@ -23601,27 +23546,28 @@ function renderAll() {
   renderMachine();
 }
 function renderRoom() {
-  const room = snapshot?.room;
+  const live = readbackOk();
+  const room = live ? snapshot.room : null;
   $("#pool-rollover").textContent = room ? fmtGen(room.rollover_pool_wei) : t(lang, "dashUnconfirmed");
   $("#round-count").textContent = room ? String(room.round_count) : t(lang, "dashUnconfirmed");
-  const rid = snapshot?.round?.round_id || room?.current_round_id || "";
+  const rid = live ? snapshot.round?.round_id || room?.current_round_id || "" : "";
   $("#round-id-display").textContent = rid || t(lang, "unconfirmed");
   if (rid && !currentRoundId) {
     currentRoundId = rid;
     $("#round-id").value = rid;
   }
-  const stage = snapshot?.round?.status || "";
+  const stage = live ? snapshot.round?.status || "" : "";
   const stages = ["DRAWING", "GUESSING", "JUDGED", "SETTLED"];
   $("#pipeline").innerHTML = stages.map((s, i) => {
     const active = stage === s;
-    const label = snapshot ? `${i + 1}. ${s}` : `${i + 1}. ${t(lang, "unconfirmed")}`;
+    const label = live ? `${i + 1}. ${s}` : `${i + 1}. ${t(lang, "unconfirmed")}`;
     return `<span class="pipe-step${active ? " active" : ""}">${esc(label)}</span>`;
   }).join('<span class="pipe-arrow">\u2192</span>');
-  const pot = snapshot?.round;
+  const pot = live ? snapshot.round : null;
   $("#pool-current").textContent = pot?.total_pot_wei ? fmtGen(pot.total_pot_wei) : t(lang, "dashUnconfirmed");
 }
 function renderConsole() {
-  const r = snapshot?.round;
+  const r = readbackOk() ? snapshot.round : null;
   const u = () => t(lang, "unconfirmed");
   $("#c-status").textContent = r ? r.status : u();
   $("#c-commit").textContent = r?.concept_commit || u();
@@ -23644,10 +23590,11 @@ function renderConsole() {
   updateTimeoutButton();
 }
 function renderCanvasState() {
-  const r = snapshot?.round;
+  const r = readbackOk() ? snapshot.round : null;
   const locked = !!r && r.status !== "DRAWING";
   if (canvas) canvas.dataset.locked = locked ? "1" : "0";
-  $("#canvas-state").textContent = !snapshot ? t(lang, "unconfirmed") : locked ? t(lang, "canvasReadonly") : t(lang, "canvasActive");
+  $("#canvas-state").textContent = !readbackOk() ? t(lang, "unconfirmed") : locked ? t(lang, "canvasReadonly") : t(lang, "canvasActive");
+  renderCanvasMeta();
   const stage = $("#reveal-stage");
   if (!r) {
     stage.innerHTML = `<p class="reveal-wait">${esc(t(lang, "revealWaiting"))}</p>${verdictStampHTML(null)}`;
@@ -23669,7 +23616,7 @@ function renderCanvasState() {
 }
 function renderGuesses() {
   const box = $("#guess-stream");
-  const r = snapshot?.round;
+  const r = readbackOk() ? snapshot.round : null;
   if (!r) {
     box.innerHTML = `<p class="empty">${esc(t(lang, "unconfirmedLong"))}</p>`;
     return;
@@ -23691,8 +23638,8 @@ function renderGuesses() {
   $("#guess-count").textContent = String(guesses.length);
 }
 function renderPayouts() {
-  const r = snapshot?.round;
-  const room = snapshot?.room;
+  const r = readbackOk() ? snapshot.round : null;
+  const room = readbackOk() ? snapshot.room : null;
   const u = () => t(lang, "dashUnconfirmed");
   $("#p-drawer").textContent = r?.status === "SETTLED" ? fmtGen(r.drawer_payout_wei) : u();
   const guessTotal = r?.status === "SETTLED" ? Object.values(r.guesser_payouts || {}).reduce((a, v) => a + BigInt(v || "0"), 0n).toString() : null;
@@ -23700,27 +23647,38 @@ function renderPayouts() {
   $("#p-rollover").textContent = r?.status === "SETTLED" ? fmtGen(r.next_rollover_pool_wei) : room ? fmtGen(room.rollover_pool_wei) : u();
   $("#p-total").textContent = r?.status === "SETTLED" ? fmtGen(r.total_pot_wei) : u();
   $("#p-fastest").textContent = r?.status === "SETTLED" ? r.fastest_guesser ? shortAddr(r.fastest_guesser) : "\u2014" : u();
-  const stats = snapshot?.stats;
+  const stats = readbackOk() ? snapshot.stats : null;
   $("#p-score").textContent = stats ? String(stats.score) : u();
   $("#p-balance").textContent = stats ? fmtGen(stats.balance_wei) : u();
   $("#split-wrap").innerHTML = potSplitHTML(r);
 }
 function galleryCard(e, detail) {
-  const tone = detail ? verdictTone(detail) : "navy";
-  const thumb = detail?.image_b64 ? `<img class="thumb" alt="drawing ${esc(e.round_id)}" src="data:image/png;base64,${esc(detail.image_b64)}">` : `<div class="thumb thumb-empty">${esc(t(lang, "unconfirmed"))}</div>`;
+  if (!detail) {
+    return `<article class="gcard tone-navy" data-round="${esc(e.round_id)}">
+    <div class="gcard-head">
+      <div class="thumb thumb-empty">${esc(t(lang, "unconfirmed"))}</div>
+      <span class="gcard-meta"><span class="gcard-id mono">${esc(e.round_id)}</span>
+      <span class="gcard-verdict mono">${esc(t(lang, "unconfirmed"))}</span></span>
+    </div>
+    <div class="gcard-body"><span>${esc(t(lang, "unconfirmedLong"))}</span></div>
+  </article>`;
+  }
+  const tone = verdictTone(detail);
+  const hasImage = !!detail.image_b64 && !!detail.image_sha256;
+  const thumb = hasImage ? `<img class="thumb" alt="drawing ${esc(e.round_id)}" src="data:image/png;base64,${esc(detail.image_b64)}">` : `<div class="thumb thumb-empty">${esc(t(lang, "noImage"))}</div>`;
   const open = expandedGallery.has(e.round_id);
   return `<article class="gcard tone-${tone}" data-round="${esc(e.round_id)}">
     <button type="button" class="gcard-head" data-expand="${esc(e.round_id)}" aria-expanded="${open}">
       ${thumb}
-      <span class="gcard-meta"><span class="gcard-id mono">${esc(e.round_id)} \xB7 ${esc(e.revealed_concept || "")}</span>
-      <span class="gcard-verdict mono">${esc(e.drawing_verdict || t(lang, "unconfirmed"))}</span>
-      <span class="gcard-reason mono">${esc(e.reason_code || "")}</span></span>
+      <span class="gcard-meta"><span class="gcard-id mono">${esc(e.round_id)} \xB7 ${esc(detail.revealed_concept || "")}</span>
+      <span class="gcard-verdict mono">${esc(detail.drawing_verdict || t(lang, "unconfirmed"))}</span>
+      <span class="gcard-reason mono">${esc(detail.reason_code || "")}</span></span>
     </button>
     <div class="gcard-body">
-      <div>${esc(t(lang, "fastestGuesser"))}: <span class="mono">${esc(e.fastest_guesser ? shortAddr(e.fastest_guesser) : "\u2014")}</span></div>
+      <div>${esc(t(lang, "fastestGuesser"))}: <span class="mono">${esc(detail.fastest_guesser ? shortAddr(detail.fastest_guesser) : "\u2014")}</span></div>
       ${potSplitHTML(detail)}
       <button type="button" class="btn secondary" data-export="${esc(e.round_id)}"
-        ${detail?.status === "SETTLED" && snapshot ? "" : "disabled"}>${esc(t(lang, "exportDossier"))}</button>
+        ${detail.status === "SETTLED" && snapshot?.finalized ? "" : "disabled"}>${esc(t(lang, "exportDossier"))}</button>
       <span class="hint">${esc(t(lang, "exportDisabledNote"))}</span>
     </div>
     ${open && detail ? `<div class="gcard-detail"><h4>${esc(t(lang, "roundDetail"))}</h4>
@@ -23741,7 +23699,7 @@ function galleryCard(e, detail) {
 }
 function renderGallery() {
   const box = $("#gallery");
-  if (!snapshot) {
+  if (!readbackOk()) {
     box.innerHTML = `<p class="empty">${esc(t(lang, "unconfirmedLong"))}</p>`;
     return;
   }
@@ -23754,8 +23712,19 @@ function renderGallery() {
 }
 function renderEvidence() {
   const box = $("#evidence");
+  if (!readbackOk()) {
+    box.innerHTML = `<p class="empty">${esc(t(lang, "unconfirmedLong"))}</p>`;
+    return;
+  }
   const txRows = EVIDENCE_DATA.txs.map((tx) => `<tr><td>${esc(tx.label)}</td><td class="mono"><a href="${EXPLORER}/tx/${esc(tx.hash)}" target="_blank" rel="noreferrer">${esc(tx.hash.slice(0, 18))}\u2026</a></td></tr>`).join("");
-  const roundRows = EVIDENCE_DATA.rounds.map((r) => `<tr><td class="mono">${esc(r.id)}</td><td class="mono">${esc(r.concept)}</td><td class="mono">${esc(r.verdict)}</td><td class="mono">${esc(r.reason)}</td><td>${esc(r.pot)}</td><td>${esc(r.drawer)}</td><td>${esc(r.guessers)}</td><td>${esc(r.rollover)}</td></tr>`).join("");
+  const roundRows = (snapshot.gallery?.entries || []).map((e) => {
+    const d = snapshot.galleryRounds[e.round_id];
+    if (!d) {
+      return `<tr><td class="mono">${esc(e.round_id)}</td><td colspan="7">${esc(t(lang, "unconfirmed"))}</td></tr>`;
+    }
+    const guessers = Object.entries(d.guesser_payouts || {}).map(([a, v]) => `${shortAddr(a)} ${fmtGen(v)}`).join(", ") || "\u2014";
+    return `<tr><td class="mono">${esc(d.round_id)}</td><td class="mono">${esc(d.revealed_concept || "")}</td><td class="mono">${esc(d.drawing_verdict || t(lang, "unconfirmed"))}</td><td class="mono">${esc(d.reason_code || "")}</td><td>${esc(fmtGenExact(d.total_pot_wei))}</td><td>${esc(fmtGen(d.drawer_payout_wei))}</td><td>${esc(guessers)}</td><td>${esc(fmtGen(d.next_rollover_pool_wei))}</td></tr>`;
+  }).join("");
   box.innerHTML = `
     <h3>${esc(t(lang, "claimsTitle"))}</h3>
     <ol>${[1, 2, 3, 4, 5].map((i) => `<li>${esc(t(lang, "claim" + i))}</li>`).join("")}</ol>
@@ -23786,7 +23755,7 @@ function renderMachine() {
   lines.push(`SOURCE_SHA256 . ${SOURCE_SHA256}`);
   lines.push(`CHAIN_ID ...... ${CHAIN_ID}`);
   lines.push(`RPC ........... ${RPC_URL}`);
-  if (!snapshot) {
+  if (!snapshot?.finalized) {
     lines.push(`READBACK ...... UNCONFIRMED`);
     lines.push(`STATUS ........ UNCONFIRMED`);
     lines.push(`VERDICT ....... UNCONFIRMED`);
@@ -23812,7 +23781,7 @@ var timeoutCheckRunning = false;
 async function updateTimeoutButton() {
   const btn = $("#btn-timeout");
   if (!btn) return;
-  const r = snapshot?.round;
+  const r = readbackOk() ? snapshot.round : null;
   if (!r || r.status !== "DRAWING" && r.status !== "GUESSING") {
     btn.disabled = true;
     return;
@@ -23869,6 +23838,7 @@ async function onSubmitDrawing() {
     setNotice(t(lang, "needRound"), "error");
     return;
   }
+  await updateExport();
   if (!currentImageB64 || !currentImageSha) {
     setNotice(t(lang, "needDrawing"), "error");
     return;

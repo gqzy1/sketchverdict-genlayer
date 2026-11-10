@@ -140,13 +140,75 @@ test('demo presets: base64 bytes SHA-256 matches evidence/images.json', () => {
   }
 });
 
-test('evidence-data: 64 txs, deploy tx, contract, source sha', () => {
+test('evidence-data: 64 txs, deploy tx, contract, source sha — and no hardcoded round outcomes', () => {
   assert.equal(EVIDENCE_DATA.contract, '0x56C85764c91F439185f446e019BB70A877458b54');
   assert.equal(EVIDENCE_DATA.deploy_tx, '0x0cddebb7db0464d2b6f677f29a1e59885d79b192fe4fc536cdc5d11f291d81ce');
   assert.equal(EVIDENCE_DATA.source_sha256, '0fc91d3c93fabad3178bfb1559540bba52c26277e8d0935dac43ecae62b15a47');
   assert.equal(EVIDENCE_DATA.tx_count, 64);
   assert.equal(EVIDENCE_DATA.txs.length, 64);
-  assert.equal(EVIDENCE_DATA.rounds.length, 10);
+  // Round outcomes must never be hardcoded in the bundle: the evidence
+  // table renders them from the live FINALIZED readback (a stale copy once
+  // rendered a wrong R6 row). The tx links are immutable references only.
+  assert.equal(EVIDENCE_DATA.rounds, undefined, 'no hardcoded rounds array may remain');
+});
+
+test('Gate 11 structural: evidence round table renders only FINALIZED-readback data', () => {
+  const app = read('site/src/app.js');
+  assert.ok(!app.includes('EVIDENCE_DATA.rounds'), 'round table must not read a hardcoded copy');
+  assert.ok(app.includes('snapshot.galleryRounds[e.round_id]'),
+    'round rows come from the live per-round FINALIZED reads');
+  assert.ok(app.includes('function renderEvidence'),
+    'renderEvidence found');
+  const evStart = app.indexOf('function renderEvidence');
+  const evEnd = app.indexOf('function renderMachine', evStart);
+  const evBody = app.slice(evStart, evEnd);
+  assert.ok(evBody.includes('if (!readbackOk())'),
+    'evidence panel shows its UNCONFIRMED state before a FINALIZED readback');
+  assert.ok(evBody.includes('fmtGenExact(d.total_pot_wei)'),
+    'live pot renders with exact wei (odd-wei pots are never rounded away)');
+});
+
+test('Gate 11 structural: every verdict display gates on snapshot.finalized', () => {
+  const app = read('site/src/app.js');
+  // The gate helper exists and every display render uses it (or the flag
+  // directly); no render may key off bare snapshot truthiness.
+  assert.ok(app.includes('const readbackOk = () => snapshot?.finalized === true'),
+    'readbackOk helper gates on the finalized flag');
+  const fnBody = (name) => {
+    const start = app.indexOf(`function ${name}(`);
+    assert.ok(start !== -1, name + ' found');
+    const next = app.indexOf('\nfunction ', start);
+    return next === -1 ? app.slice(start) : app.slice(start, next);
+  };
+  for (const fn of ['renderStatus', 'renderRoom', 'renderConsole', 'renderCanvasState',
+    'renderGuesses', 'renderPayouts', 'renderGallery', 'renderEvidence', 'renderMachine']) {
+    const body = fnBody(fn);
+    assert.ok(body.includes('readbackOk()') || body.includes('snapshot?.finalized'),
+      fn + ' must gate on readbackOk()/snapshot.finalized');
+  }
+  // Gallery cards render verdict/image only from the FINALIZED per-round
+  // detail; without it they show only the round id + UNCONFIRMED.
+  const gcStart = app.indexOf('function galleryCard');
+  const gcBody = app.slice(gcStart, app.indexOf('\nfunction renderGallery', gcStart));
+  assert.ok(gcBody.includes('if (!detail)'), 'card without detail renders no verdict');
+  assert.ok(gcBody.includes('!!detail.image_b64 && !!detail.image_sha256'),
+    'image renders only with FINALIZED bytes AND hash');
+  assert.ok(gcBody.includes("t(lang, 'noImage')"), 'no-image rounds are labelled, not left blank');
+  assert.ok(!gcBody.includes('e.drawing_verdict'), 'card head must not use the gallery entry verdict');
+});
+
+test('Gate 11 structural: canvas meta never shows a hash for blank paper; demos are labelled', () => {
+  const app = read('site/src/app.js');
+  const cmStart = app.indexOf('function renderCanvasMeta');
+  const cmBody = app.slice(cmStart, app.indexOf('\nfunction ', cmStart + 10));
+  assert.ok(cmBody.includes("canvasContent === 'blank'"), 'blank canvas is a distinct state');
+  assert.ok(cmBody.includes("t(lang, 'canvasPresetBlank')"), 'blank canvas is labelled, not hashed');
+  assert.ok(cmBody.includes("demoOriginal.sha"), 'a loaded demo shows its verified original SHA');
+  assert.ok(cmBody.includes("t(lang, 'canvasPresetDemo')"), 'a loaded demo is labelled demo/示意 in the panel');
+  assert.ok(app.includes("canvasContent = 'demo'"), 'demo load marks the canvas content as demo');
+  assert.ok(app.includes("if (canvasContent === 'demo' && demoOriginal)"),
+    'a loaded demo submits its exact evidence bytes, not a re-encode');
+  assert.ok(app.includes("canvasContent = 'drawn'"), 'the first stroke invalidates a loaded demo');
 });
 
 test('Gate 11 static: index.html has full contract address, no dead address, no verdict claims', () => {

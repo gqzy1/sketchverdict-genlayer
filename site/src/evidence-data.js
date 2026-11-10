@@ -1,5 +1,7 @@
-// Evidence transactions + per-round outcomes (copied from evidence/evidence.json
-// and evidence/EVIDENCE.md — read-only reference data for the reviewer panel).
+// Evidence transactions (copied from evidence/evidence.json — read-only
+// reference links for the reviewer panel). Per-round outcomes are NOT
+// copied here: the evidence page renders them from the live FINALIZED
+// readback only, so no hardcoded outcome can ever go stale.
 // No value shown on this page is a live claim: live values come only from a
 // FINALIZED get_* readback. This file only feeds the evidence-page link table.
  export const EVIDENCE_DATA = {
@@ -265,116 +267,4 @@
       "hash": "0xc73b8c765a0616b6ac2f871e640f9c28f1d3968b1edc7167f6847d0b0c20b222"
     }
   ],
-  "rounds": [
-    {
-      "id": "R1",
-      "concept": "bicycle",
-      "verdict": "DRAWING_MATCHES",
-      "reason": "VISUAL_MATCH_CONFIRMED",
-      "pot": "25",
-      "drawer": "12.5",
-      "guessers": "B 6.25, C 6.25",
-      "rollover": "0",
-      "fastest": "B"
-    },
-    {
-      "id": "R2",
-      "concept": "lighthouse",
-      "verdict": "DRAWING_MATCHES",
-      "reason": "VISUAL_MATCH_CONFIRMED",
-      "pot": "20",
-      "drawer": "10",
-      "guessers": "A 5, B 5",
-      "rollover": "0",
-      "fastest": "A"
-    },
-    {
-      "id": "R2b",
-      "concept": "lighthouse",
-      "verdict": "DRAWING_WEAK",
-      "reason": "VISUAL_WEAK_PARTIAL",
-      "pot": "20",
-      "drawer": "5",
-      "guessers": "A 2.5, B 2.5",
-      "rollover": "10",
-      "fastest": "A"
-    },
-    {
-      "id": "R3",
-      "concept": "volcano",
-      "verdict": "DRAWING_MISS",
-      "reason": "TEXT_CHEAT_DETECTED",
-      "pot": "25",
-      "drawer": "0",
-      "guessers": "A 0",
-      "rollover": "25",
-      "fastest": "\u2014"
-    },
-    {
-      "id": "R4",
-      "concept": "guitar",
-      "verdict": "DRAWING_MISS",
-      "reason": "VISUAL_MISS",
-      "pot": "40",
-      "drawer": "0",
-      "guessers": "\u2014",
-      "rollover": "40",
-      "fastest": "\u2014"
-    },
-    {
-      "id": "R5",
-      "concept": "bicycle",
-      "verdict": "DRAWING_MATCHES",
-      "reason": "VISUAL_MATCH_CONFIRMED",
-      "pot": "55",
-      "drawer": "27.5",
-      "guessers": "B 27.5",
-      "rollover": "0",
-      "fastest": "B"
-    },
-    {
-      "id": "R6",
-      "concept": "bicycle",
-      "verdict": "DRAWING_MATCHES",
-      "reason": "VISUAL_MATCH_CONFIRMED",
-      "pot": "20",
-      "drawer": "10",
-      "guessers": "B 10",
-      "rollover": "0",
-      "fastest": "B"
-    },
-    {
-      "id": "R7",
-      "concept": "crank",
-      "verdict": "DRAWING_MISS",
-      "reason": "DRAWER_DRAWING_TIMEOUT",
-      "pot": "\u2014",
-      "drawer": "0",
-      "guessers": "\u2014",
-      "rollover": "10",
-      "fastest": "\u2014"
-    },
-    {
-      "id": "R8",
-      "concept": "bicycle",
-      "verdict": "DRAWING_MISS",
-      "reason": "DRAWER_REVEAL_TIMEOUT",
-      "pot": "\u2014",
-      "drawer": "0",
-      "guessers": "refunded 5 each",
-      "rollover": "20",
-      "fastest": "\u2014"
-    },
-    {
-      "id": "R9",
-      "concept": "bicycle",
-      "verdict": "DRAWING_MATCHES",
-      "reason": "VISUAL_MATCH_CONFIRMED",
-      "pot": "26 + 1 wei",
-      "drawer": "13",
-      "guessers": "B 13",
-      "rollover": "1 wei",
-      "fastest": "B"
-    }
-  ]
 };

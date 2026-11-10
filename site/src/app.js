@@ -34,6 +34,10 @@ let staticMode = new URLSearchParams(location.search).has('static')
   || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 let snapshot = null; // { room, round, gallery, galleryRounds, stats, finalized, readAt, readBackAt } or null —
 // `finalized` is threaded up from readFinal's stamps only, never written here.
+// Gate 11: NO verdict claim, amount, score or round state may render until
+// a FINALIZED readback has completed. Every render function gates on
+// readbackOk() — snapshot truthiness alone is never enough.
+const readbackOk = () => snapshot?.finalized === true;
 let readingBack = false;
 let wallet = null; // { kind: 'injected'|'temp', address, label }
 let tempAccount = null; // in-memory only; never serialized or stored
@@ -67,6 +71,16 @@ function fmtGen(weiStr) {
   } catch { return t(lang, 'unconfirmed'); }
 }
 function fmtWei(weiStr) { try { return BigInt(weiStr ?? '0').toString() + ' wei'; } catch { return '—'; } }
+function fmtGenExact(weiStr) {
+  // Like fmtGen, but keeps a sub-6-decimal remainder as "+ N wei" so an
+  // odd-wei pot (e.g. R9's 26 GEN + 1 wei) is never silently rounded away.
+  try {
+    const w = BigInt(weiStr ?? '0');
+    const base = fmtGen(weiStr);
+    const sub = (w % GEN) % (10n ** 12n);
+    return sub === 0n ? base : `${base} + ${sub} wei`;
+  } catch { return t(lang, 'unconfirmed'); }
+}
 async function sha256Hex(bytes) {
   const d = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(d)).map((b) => b.toString(16).padStart(2, '0')).join('');
@@ -320,6 +334,14 @@ let canvas, ctx, drawing = false, lastPt = null;
 let brushColor = INK_COLORS[0], brushSize = 6;
 let currentImageBytes = null, currentImageB64 = '', currentImageSha = '';
 let presetLoaded = null;
+// What is on the canvas right now. 'blank' = untouched paper (no drawing
+// identity at all — its export hash must never be displayed as a drawing
+// SHA); 'drawn' = the user's own strokes; 'demo' = a demo case loaded
+// verbatim from the evidence bytes. demoOriginal holds the demo's verified
+// original bytes/SHA so the panel shows the evidence-record identity, not
+// the canvas re-encode.
+let canvasContent = 'blank';
+let demoOriginal = null; // { id, sha, bytes, b64 } while a demo is loaded
 
 function initCanvas() {
   canvas = $('#draw-canvas');
@@ -328,6 +350,8 @@ function initCanvas() {
   ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
+  canvasContent = 'blank';
+  demoOriginal = null;
   const pos = (e) => {
     const rect = canvas.getBoundingClientRect();
     return { x: (e.clientX - rect.left) * (CANVAS_SIZE / rect.width),
@@ -337,6 +361,10 @@ function initCanvas() {
     if (canvas.dataset.locked === '1') return;
     e.preventDefault();
     canvas.setPointerCapture(e.pointerId);
+    // The first stroke invalidates a loaded demo: from here on the canvas
+    // is the user's own drawing and the export is recomputed from pixels.
+    if (canvasContent === 'demo') { canvasContent = 'drawn'; demoOriginal = null; presetLoaded = null; }
+    else if (canvasContent === 'blank') { canvasContent = 'drawn'; }
     drawing = true;
     lastPt = pos(e);
     dot(lastPt);
@@ -367,12 +395,25 @@ function clearCanvas() {
   ctx.fillStyle = PAPER;
   ctx.fillRect(0, 0, CANVAS_SIZE, CANVAS_SIZE);
   presetLoaded = null;
+  canvasContent = 'blank';
+  demoOriginal = null;
   updateExport();
 }
 function canvasToBlob() {
   return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
 }
 async function updateExport() {
+  // A loaded demo keeps the EXACT evidence bytes: the preset is the
+  // on-chain image itself, so the submit hash equals the evidence-record
+  // SHA. Anything else (blank paper, user strokes) is exported from the
+  // canvas pixels as before.
+  if (canvasContent === 'demo' && demoOriginal) {
+    currentImageBytes = b64decode(demoOriginal.b64);
+    currentImageB64 = demoOriginal.b64;
+    currentImageSha = demoOriginal.sha;
+    renderCanvasMeta();
+    return;
+  }
   const blob = await canvasToBlob();
   const buf = new Uint8Array(await blob.arrayBuffer());
   currentImageBytes = buf;
@@ -381,9 +422,30 @@ async function updateExport() {
   renderCanvasMeta();
 }
 function renderCanvasMeta() {
+  // The canvas meta never presents a hash for blank paper: the blank
+  // export's SHA is not a drawing identity, and showing it next to the
+  // on-chain panel invites exactly the mismatch the cold-start check found.
+  const preset = $('#canvas-preset');
+  if (canvasContent === 'blank') {
+    $('#image-sha').textContent = t(lang, 'unconfirmed');
+    $('#image-bytes').textContent = '—';
+    $('#b64-size').textContent = '—';
+    if (preset) preset.textContent = t(lang, 'canvasPresetBlank');
+    return;
+  }
+  if (canvasContent === 'demo' && demoOriginal) {
+    // The drawing's identity is the verified ORIGINAL (evidence-record)
+    // bytes — the canvas is only a visual preview of those exact bytes.
+    $('#image-sha').textContent = demoOriginal.sha;
+    $('#image-bytes').textContent = String(demoOriginal.bytes);
+    $('#b64-size').textContent = String(demoOriginal.b64.length);
+    if (preset) preset.textContent = `${t(lang, 'canvasPresetDemo')} · ${demoOriginal.id}`;
+    return;
+  }
   $('#image-sha').textContent = currentImageSha || t(lang, 'unconfirmed');
   $('#image-bytes').textContent = currentImageBytes ? String(currentImageBytes.length) : '—';
   $('#b64-size').textContent = currentImageB64 ? String(currentImageB64.length) : '—';
+  if (preset) preset.textContent = t(lang, 'canvasPresetDrawn');
 }
 
 // ------------------------------------------------------------------
@@ -418,6 +480,8 @@ async function loadDemoCase(c) {
     ctx.drawImage(img, 0, 0, CANVAS_SIZE, CANVAS_SIZE);
     URL.revokeObjectURL(url);
     presetLoaded = c.id;
+    canvasContent = 'demo';
+    demoOriginal = { id: c.id, sha: c.sha, bytes: bytes.length, b64 };
     await updateExport();
     setNotice(`${t(lang, 'demoLoaded')} — ${t(lang, 'demoShaMatch')}`, 'ok');
   } catch (e) { setNotice(`${t(lang, 'txError')} (${e.message})`, 'error'); }
@@ -435,15 +499,15 @@ function setNotice(msg, kind) {
 }
 function renderStatus() {
   const m = $('#readback-marker');
-  if (snapshot) {
+  if (snapshot?.finalized) {
     m.textContent = `✓ Read from FINALIZED Studionet state · ${snapshot.readBackAt}`;
     m.classList.add('ok');
   } else {
     m.textContent = t(lang, 'readbackPending');
     m.classList.remove('ok');
   }
-  $('#last-readback').textContent = snapshot ? snapshot.readBackAt : t(lang, 'neverReadBack');
-  $('#offline-banner').hidden = !!snapshot;
+  $('#last-readback').textContent = snapshot?.finalized ? snapshot.readBackAt : t(lang, 'neverReadBack');
+  $('#offline-banner').hidden = readbackOk();
 }
 function renderWallet() {
   const cap = $('#wallet-capsule');
@@ -508,26 +572,28 @@ function renderAll() {
   renderMachine();
 }
 function renderRoom() {
-  const room = snapshot?.room;
+  const live = readbackOk();
+  const room = live ? snapshot.room : null;
   $('#pool-rollover').textContent = room ? fmtGen(room.rollover_pool_wei) : t(lang, 'dashUnconfirmed');
   $('#round-count').textContent = room ? String(room.round_count) : t(lang, 'dashUnconfirmed');
-  const rid = snapshot?.round?.round_id || room?.current_round_id || '';
+  const rid = live ? (snapshot.round?.round_id || room?.current_round_id || '') : '';
   $('#round-id-display').textContent = rid || t(lang, 'unconfirmed');
   if (rid && !currentRoundId) { currentRoundId = rid; $('#round-id').value = rid; }
-  // Pipeline: stage names render only after a readback; before that every
-  // step shows UNCONFIRMED so no stage/verdict string is ever pre-claimed.
-  const stage = snapshot?.round?.status || '';
+  // Pipeline: stage names render only after a FINALIZED readback; before
+  // that every step shows UNCONFIRMED so no stage/verdict string is ever
+  // pre-claimed.
+  const stage = live ? (snapshot.round?.status || '') : '';
   const stages = ['DRAWING', 'GUESSING', 'JUDGED', 'SETTLED'];
   $('#pipeline').innerHTML = stages.map((s, i) => {
     const active = stage === s;
-    const label = snapshot ? `${i + 1}. ${s}` : `${i + 1}. ${t(lang, 'unconfirmed')}`;
+    const label = live ? `${i + 1}. ${s}` : `${i + 1}. ${t(lang, 'unconfirmed')}`;
     return `<span class="pipe-step${active ? ' active' : ''}">${esc(label)}</span>`;
   }).join('<span class="pipe-arrow">→</span>');
-  const pot = snapshot?.round;
+  const pot = live ? snapshot.round : null;
   $('#pool-current').textContent = pot?.total_pot_wei ? fmtGen(pot.total_pot_wei) : t(lang, 'dashUnconfirmed');
 }
 function renderConsole() {
-  const r = snapshot?.round;
+  const r = readbackOk() ? snapshot.round : null;
   const u = () => t(lang, 'unconfirmed');
   $('#c-status').textContent = r ? r.status : u();
   $('#c-commit').textContent = r?.concept_commit || u();
@@ -550,11 +616,12 @@ function renderConsole() {
   updateTimeoutButton();
 }
 function renderCanvasState() {
-  const r = snapshot?.round;
+  const r = readbackOk() ? snapshot.round : null;
   const locked = !!r && r.status !== 'DRAWING';
   if (canvas) canvas.dataset.locked = locked ? '1' : '0';
-  $('#canvas-state').textContent = !snapshot ? t(lang, 'unconfirmed')
+  $('#canvas-state').textContent = !readbackOk() ? t(lang, 'unconfirmed')
     : locked ? t(lang, 'canvasReadonly') : t(lang, 'canvasActive');
+  renderCanvasMeta();
   const stage = $('#reveal-stage');
   if (!r) {
     stage.innerHTML = `<p class="reveal-wait">${esc(t(lang, 'revealWaiting'))}</p>${verdictStampHTML(null)}`;
@@ -576,7 +643,7 @@ function renderCanvasState() {
 }
 function renderGuesses() {
   const box = $('#guess-stream');
-  const r = snapshot?.round;
+  const r = readbackOk() ? snapshot.round : null;
   if (!r) { box.innerHTML = `<p class="empty">${esc(t(lang, 'unconfirmedLong'))}</p>`; return; }
   const guesses = [...(r.guesses || [])].sort((a, b) => a.seq_no - b.seq_no);
   if (!guesses.length) { box.innerHTML = `<p class="empty">${esc(t(lang, 'noGuesses'))}</p>`; return; }
@@ -593,8 +660,8 @@ function renderGuesses() {
   $('#guess-count').textContent = String(guesses.length);
 }
 function renderPayouts() {
-  const r = snapshot?.round;
-  const room = snapshot?.room;
+  const r = readbackOk() ? snapshot.round : null;
+  const room = readbackOk() ? snapshot.room : null;
   const u = () => t(lang, 'dashUnconfirmed');
   $('#p-drawer').textContent = r?.status === 'SETTLED' ? fmtGen(r.drawer_payout_wei) : u();
   const guessTotal = r?.status === 'SETTLED'
@@ -606,29 +673,47 @@ function renderPayouts() {
   $('#p-total').textContent = r?.status === 'SETTLED' ? fmtGen(r.total_pot_wei) : u();
   $('#p-fastest').textContent = r?.status === 'SETTLED'
     ? (r.fastest_guesser ? shortAddr(r.fastest_guesser) : '—') : u();
-  const stats = snapshot?.stats;
+  const stats = readbackOk() ? snapshot.stats : null;
   $('#p-score').textContent = stats ? String(stats.score) : u();
   $('#p-balance').textContent = stats ? fmtGen(stats.balance_wei) : u();
   $('#split-wrap').innerHTML = potSplitHTML(r);
 }
 function galleryCard(e, detail) {
-  const tone = detail ? verdictTone(detail) : 'navy';
-  const thumb = detail?.image_b64
+  // A card renders verdict, reason, allocations and image ONLY from its own
+  // FINALIZED per-round read (detail). Without that read the card shows
+  // nothing but the round id and UNCONFIRMED — never the gallery entry's
+  // verdict next to an unconfirmed split bar, and never an image.
+  if (!detail) {
+    return `<article class="gcard tone-navy" data-round="${esc(e.round_id)}">
+    <div class="gcard-head">
+      <div class="thumb thumb-empty">${esc(t(lang, 'unconfirmed'))}</div>
+      <span class="gcard-meta"><span class="gcard-id mono">${esc(e.round_id)}</span>
+      <span class="gcard-verdict mono">${esc(t(lang, 'unconfirmed'))}</span></span>
+    </div>
+    <div class="gcard-body"><span>${esc(t(lang, 'unconfirmedLong'))}</span></div>
+  </article>`;
+  }
+  const tone = verdictTone(detail);
+  // An image renders only when the FINALIZED per-round read carries real
+  // image bytes AND their hash. A round with no drawing (e.g. R7, drawing
+  // timeout) shows an explicit no-image thumb, never another round's art.
+  const hasImage = !!detail.image_b64 && !!detail.image_sha256;
+  const thumb = hasImage
     ? `<img class="thumb" alt="drawing ${esc(e.round_id)}" src="data:image/png;base64,${esc(detail.image_b64)}">`
-    : `<div class="thumb thumb-empty">${esc(t(lang, 'unconfirmed'))}</div>`;
+    : `<div class="thumb thumb-empty">${esc(t(lang, 'noImage'))}</div>`;
   const open = expandedGallery.has(e.round_id);
   return `<article class="gcard tone-${tone}" data-round="${esc(e.round_id)}">
     <button type="button" class="gcard-head" data-expand="${esc(e.round_id)}" aria-expanded="${open}">
       ${thumb}
-      <span class="gcard-meta"><span class="gcard-id mono">${esc(e.round_id)} · ${esc(e.revealed_concept || '')}</span>
-      <span class="gcard-verdict mono">${esc(e.drawing_verdict || t(lang, 'unconfirmed'))}</span>
-      <span class="gcard-reason mono">${esc(e.reason_code || '')}</span></span>
+      <span class="gcard-meta"><span class="gcard-id mono">${esc(e.round_id)} · ${esc(detail.revealed_concept || '')}</span>
+      <span class="gcard-verdict mono">${esc(detail.drawing_verdict || t(lang, 'unconfirmed'))}</span>
+      <span class="gcard-reason mono">${esc(detail.reason_code || '')}</span></span>
     </button>
     <div class="gcard-body">
-      <div>${esc(t(lang, 'fastestGuesser'))}: <span class="mono">${esc(e.fastest_guesser ? shortAddr(e.fastest_guesser) : '—')}</span></div>
+      <div>${esc(t(lang, 'fastestGuesser'))}: <span class="mono">${esc(detail.fastest_guesser ? shortAddr(detail.fastest_guesser) : '—')}</span></div>
       ${potSplitHTML(detail)}
       <button type="button" class="btn secondary" data-export="${esc(e.round_id)}"
-        ${detail?.status === 'SETTLED' && snapshot ? '' : 'disabled'}>${esc(t(lang, 'exportDossier'))}</button>
+        ${detail.status === 'SETTLED' && snapshot?.finalized ? '' : 'disabled'}>${esc(t(lang, 'exportDossier'))}</button>
       <span class="hint">${esc(t(lang, 'exportDisabledNote'))}</span>
     </div>
     ${open && detail ? `<div class="gcard-detail"><h4>${esc(t(lang, 'roundDetail'))}</h4>
@@ -649,17 +734,33 @@ function galleryCard(e, detail) {
 }
 function renderGallery() {
   const box = $('#gallery');
-  if (!snapshot) { box.innerHTML = `<p class="empty">${esc(t(lang, 'unconfirmedLong'))}</p>`; return; }
+  if (!readbackOk()) { box.innerHTML = `<p class="empty">${esc(t(lang, 'unconfirmedLong'))}</p>`; return; }
   const entries = snapshot.gallery?.entries || [];
   if (!entries.length) { box.innerHTML = `<p class="empty">${esc(t(lang, 'noGallery'))}</p>`; return; }
   box.innerHTML = entries.map((e) => galleryCard(e, snapshot.galleryRounds[e.round_id] || null)).join('');
 }
 function renderEvidence() {
   const box = $('#evidence');
+  // Gate 11: the evidence panel shows its UNCONFIRMED state until a
+  // FINALIZED readback exists — no verdict table, no tx table, no claims
+  // before that. The round table below is then built from the LIVE
+  // FINALIZED per-round reads (snapshot.galleryRounds), never from a
+  // hardcoded copy, so a stale row cannot render.
+  if (!readbackOk()) {
+    box.innerHTML = `<p class="empty">${esc(t(lang, 'unconfirmedLong'))}</p>`;
+    return;
+  }
   const txRows = EVIDENCE_DATA.txs.map((tx) =>
     `<tr><td>${esc(tx.label)}</td><td class="mono"><a href="${EXPLORER}/tx/${esc(tx.hash)}" target="_blank" rel="noreferrer">${esc(tx.hash.slice(0, 18))}…</a></td></tr>`).join('');
-  const roundRows = EVIDENCE_DATA.rounds.map((r) =>
-    `<tr><td class="mono">${esc(r.id)}</td><td class="mono">${esc(r.concept)}</td><td class="mono">${esc(r.verdict)}</td><td class="mono">${esc(r.reason)}</td><td>${esc(r.pot)}</td><td>${esc(r.drawer)}</td><td>${esc(r.guessers)}</td><td>${esc(r.rollover)}</td></tr>`).join('');
+  const roundRows = (snapshot.gallery?.entries || []).map((e) => {
+    const d = snapshot.galleryRounds[e.round_id];
+    if (!d) {
+      return `<tr><td class="mono">${esc(e.round_id)}</td><td colspan="7">${esc(t(lang, 'unconfirmed'))}</td></tr>`;
+    }
+    const guessers = Object.entries(d.guesser_payouts || {})
+      .map(([a, v]) => `${shortAddr(a)} ${fmtGen(v)}`).join(', ') || '—';
+    return `<tr><td class="mono">${esc(d.round_id)}</td><td class="mono">${esc(d.revealed_concept || '')}</td><td class="mono">${esc(d.drawing_verdict || t(lang, 'unconfirmed'))}</td><td class="mono">${esc(d.reason_code || '')}</td><td>${esc(fmtGenExact(d.total_pot_wei))}</td><td>${esc(fmtGen(d.drawer_payout_wei))}</td><td>${esc(guessers)}</td><td>${esc(fmtGen(d.next_rollover_pool_wei))}</td></tr>`;
+  }).join('');
   box.innerHTML = `
     <h3>${esc(t(lang, 'claimsTitle'))}</h3>
     <ol>${[1, 2, 3, 4, 5].map((i) => `<li>${esc(t(lang, 'claim' + i))}</li>`).join('')}</ol>
@@ -687,7 +788,7 @@ function renderMachine() {
   lines.push(`SOURCE_SHA256 . ${SOURCE_SHA256}`);
   lines.push(`CHAIN_ID ...... ${CHAIN_ID}`);
   lines.push(`RPC ........... ${RPC_URL}`);
-  if (!snapshot) {
+  if (!snapshot?.finalized) {
     lines.push(`READBACK ...... UNCONFIRMED`);
     lines.push(`STATUS ........ UNCONFIRMED`);
     lines.push(`VERDICT ....... UNCONFIRMED`);
@@ -717,7 +818,7 @@ let timeoutCheckRunning = false;
 async function updateTimeoutButton() {
   const btn = $('#btn-timeout');
   if (!btn) return;
-  const r = snapshot?.round;
+  const r = readbackOk() ? snapshot.round : null;
   if (!r || (r.status !== 'DRAWING' && r.status !== 'GUESSING')) { btn.disabled = true; return; }
   if (timeoutCheckRunning) return;
   timeoutCheckRunning = true;
@@ -771,6 +872,10 @@ async function onStartRound() {
 async function onSubmitDrawing() {
   const roundId = currentRoundId || $('#round-id').value.trim();
   if (!roundId) { setNotice(t(lang, 'needRound'), 'error'); return; }
+  // Re-export from the canvas first so a stroke that landed just before
+  // this click is included; a loaded demo still submits its exact bytes
+  // (updateExport preserves them while canvasContent is 'demo').
+  await updateExport();
   if (!currentImageB64 || !currentImageSha) { setNotice(t(lang, 'needDrawing'), 'error'); return; }
   await runWrite(t(lang, 'submitDrawing'), 'submit_drawing', [roundId, currentImageB64, currentImageSha], 0n);
 }
