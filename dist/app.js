@@ -23172,37 +23172,51 @@ async function readFinal(functionName, args = []) {
   const hex = typeof result === "string" ? result : result?.data;
   if (typeof hex !== "string") throw new Error("INVALID_READ_RESULT");
   const plain = hex.startsWith("0x") ? hex.slice(2) : hex;
-  return calldata2.decode(Uint8Array.from(plain.match(/../g) || [], (x) => parseInt(x, 16)));
+  const value = calldata2.decode(Uint8Array.from(plain.match(/../g) || [], (x) => parseInt(x, 16)));
+  return { value, finalized: true, readAt: (/* @__PURE__ */ new Date()).toISOString() };
 }
 async function readJson(functionName, args = []) {
-  const s = await readFinal(functionName, args);
-  return s === "" ? null : JSON.parse(s);
+  const r = await readFinal(functionName, args);
+  return { data: r.value === "" ? null : JSON.parse(r.value), finalized: r.finalized, readAt: r.readAt };
 }
 async function refreshSnapshot() {
   if (readingBack) return;
   readingBack = true;
   renderStatus();
   try {
-    const room = await readJson("get_room_state", []);
-    const gallery = await readJson("get_gallery", []);
-    const roundId = currentRoundId || room.current_round_id || "";
-    const round = roundId ? await readJson("get_round", [roundId]) : null;
+    const roomR = await readJson("get_room_state", []);
+    const galleryR = await readJson("get_gallery", []);
+    const roundId = currentRoundId || roomR.data?.current_round_id || "";
+    const roundR = roundId ? await readJson("get_round", [roundId]) : null;
     const galleryRounds = {};
-    for (const e of gallery?.entries || []) {
+    let finalized = roomR.finalized && galleryR.finalized && (roundR ? roundR.finalized : true);
+    for (const e of galleryR.data?.entries || []) {
       try {
-        galleryRounds[e.round_id] = await readJson("get_round", [e.round_id]);
+        const rr = await readJson("get_round", [e.round_id]);
+        galleryRounds[e.round_id] = rr.data;
+        finalized = finalized && rr.finalized;
       } catch {
       }
     }
-    let stats = null;
+    let statsR = null;
     if (wallet?.address) {
       try {
-        stats = await readJson("get_player_stats", [wallet.address.toLowerCase()]);
+        statsR = await readJson("get_player_stats", [wallet.address.toLowerCase()]);
+        finalized = finalized && statsR.finalized;
       } catch {
-        stats = null;
+        statsR = null;
       }
     }
-    snapshot = { room, round, gallery, galleryRounds, stats, readBackAt: (/* @__PURE__ */ new Date()).toISOString() };
+    snapshot = {
+      room: roomR.data,
+      round: roundR ? roundR.data : null,
+      gallery: galleryR.data,
+      galleryRounds,
+      stats: statsR ? statsR.data : null,
+      finalized,
+      readAt: roomR.readAt,
+      readBackAt: roomR.readAt
+    };
     const fired = await maybeAutoReveal();
     if (fired) setTimeout(() => refreshSnapshot(), 5e3);
   } catch (error) {
@@ -23816,7 +23830,7 @@ async function updateTimeoutButton() {
 }
 function exportRoundDossier(roundId) {
   const round = snapshot?.galleryRounds[roundId] || (snapshot?.round?.round_id === roundId ? snapshot.round : null);
-  const dossier = buildDossier(round, snapshot ? { finalized: true, contract_address: CONTRACT_ADDRESS, source_sha256: SOURCE_SHA256, readback_at: snapshot.readBackAt } : null);
+  const dossier = buildDossier(round, snapshot ? { finalized: snapshot.finalized, contract_address: CONTRACT_ADDRESS, source_sha256: SOURCE_SHA256, readback_at: snapshot.readBackAt } : null);
   const blob = new Blob([JSON.stringify(dossier, null, 2)], { type: "application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);

@@ -44,6 +44,61 @@ test('dossier: export blocked before FINALIZED readback or before SETTLED', () =
   assert.throws(() => buildDossier({ ...settledMatches, drawing_verdict: '' }, readback), /awaiting FINALIZED/);
 });
 
+test('dossier: export blocked when the readback carries no finalized flag at all', () => {
+  // The snapshot-without-a-flag case: the gate must throw when `finalized`
+  // is absent (undefined), not just when it is false. An export caller may
+  // only pass through a flag produced by the latest-final read path; it
+  // must never synthesize one.
+  const noFlag = { contract_address: readback.contract_address,
+    source_sha256: readback.source_sha256, readback_at: readback.readback_at };
+  assert.throws(() => buildDossier(settledMatches, noFlag), /awaiting FINALIZED/);
+  assert.throws(() => buildDossier(settledMatches, { finalized: undefined }), /awaiting FINALIZED/);
+  assert.throws(() => buildDossier(settledMatches, {}), /awaiting FINALIZED/);
+});
+
+test('Gate 11 structural: the finalized flag is stamped only inside readFinal', () => {
+  // The literal may occur exactly once across all of site/src/, inside the
+  // readFinal function in app.js. exportRoundDossier and every other caller
+  // must consume the snapshot's own flag, never synthesize it.
+  const srcFiles = ['site/src/app.js', 'site/src/dossier.js', 'site/src/i18n.js',
+    'site/src/evidence-data.js', 'site/src/styles.css'];
+  const occurrences = [];
+  for (const f of srcFiles) {
+    const s = read(f);
+    let idx = s.indexOf('finalized: true');
+    while (idx !== -1) {
+      occurrences.push(`${f}:${s.slice(0, idx).split('\n').length}`);
+      idx = s.indexOf('finalized: true', idx + 1);
+    }
+  }
+  assert.equal(occurrences.length, 1,
+    'finalized: true must occur exactly once in site/src/: ' + occurrences.join(', '));
+  const app = read('site/src/app.js');
+  const rfStart = app.indexOf('async function readFinal');
+  const rfEnd = app.indexOf('async function readJson', rfStart);
+  assert.ok(rfStart !== -1 && rfEnd !== -1, 'readFinal/readJson found in app.js');
+  assert.ok(app.slice(rfStart, rfEnd).includes('finalized: true'),
+    'the sole occurrence lives inside readFinal');
+  assert.ok(app.slice(rfStart, rfEnd).includes('readAt'),
+    'readFinal stamps a readAt timestamp alongside the flag');
+  // readJson threads the flag through from readFinal's envelope.
+  const rjStart = app.indexOf('async function readJson');
+  const rjEnd = app.indexOf('async function refreshSnapshot', rjStart);
+  assert.ok(app.slice(rjStart, rjEnd).includes('finalized: r.finalized'),
+    'readJson threads readFinal’s flag, it does not stamp its own');
+  // The snapshot carries the threaded flag; the export consumes it.
+  const snapStart = app.indexOf('snapshot = { room:');
+  assert.ok(snapStart !== -1, 'snapshot assembly found');
+  assert.ok(app.slice(snapStart, snapStart + 400).includes('finalized'),
+    'snapshot carries the threaded finalized flag');
+  assert.ok(app.includes('finalized: snapshot.finalized'),
+    'exportRoundDossier consumes snapshot.finalized');
+  const exStart = app.indexOf('function exportRoundDossier');
+  assert.ok(exStart !== -1, 'exportRoundDossier found');
+  assert.ok(!app.slice(exStart).includes('finalized: true'),
+    'nothing from exportRoundDossier onward synthesizes the flag');
+});
+
 test('dossier: SETTLED MATCHES echoes readback fields verbatim', () => {
   const d = buildDossier(settledMatches, readback);
   assert.equal(d.verdict_class, 'FULL_MATCH_SETTLED');

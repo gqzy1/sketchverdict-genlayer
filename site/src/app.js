@@ -32,7 +32,8 @@ let lang = localStorage.getItem('sv-lang') || 'zh';
 let view = 'human';
 let staticMode = new URLSearchParams(location.search).has('static')
   || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-let snapshot = null; // { room, round, gallery, galleryRounds, stats, readBackAt } or null
+let snapshot = null; // { room, round, gallery, galleryRounds, stats, finalized, readAt, readBackAt } or null —
+// `finalized` is threaded up from readFinal's stamps only, never written here.
 let readingBack = false;
 let wallet = null; // { kind: 'injected'|'temp', address, label }
 let tempAccount = null; // in-memory only; never serialized or stored
@@ -136,11 +137,20 @@ async function readFinal(functionName, args = []) {
   const hex = typeof result === 'string' ? result : result?.data;
   if (typeof hex !== 'string') throw new Error('INVALID_READ_RESULT');
   const plain = hex.startsWith('0x') ? hex.slice(2) : hex;
-  return calldata.decode(Uint8Array.from(plain.match(/../g) || [], (x) => parseInt(x, 16)));
+  const value = calldata.decode(Uint8Array.from(plain.match(/../g) || [], (x) => parseInt(x, 16)));
+  // Gate 11: this return is the SOLE place in the frontend that stamps the
+  // finalized flag, immediately after a latest-final gen_call succeeds.
+  // Every downstream consumer (readJson, the snapshot, the dossier export)
+  // threads this flag through and never writes it itself, so a future
+  // read-variant change cannot silently feed non-final data to the export.
+  return { value, finalized: true, readAt: new Date().toISOString() };
 }
 async function readJson(functionName, args = []) {
-  const s = await readFinal(functionName, args);
-  return s === '' ? null : JSON.parse(s);
+  // Threads readFinal's envelope through untouched: decoded JSON in `data`,
+  // the finalized flag and readAt passed along as produced. This function
+  // never stamps or synthesizes the flag itself.
+  const r = await readFinal(functionName, args);
+  return { data: r.value === '' ? null : JSON.parse(r.value), finalized: r.finalized, readAt: r.readAt };
 }
 
 async function refreshSnapshot() {
@@ -148,19 +158,31 @@ async function refreshSnapshot() {
   readingBack = true;
   renderStatus();
   try {
-    const room = await readJson('get_room_state', []);
-    const gallery = await readJson('get_gallery', []);
-    const roundId = currentRoundId || room.current_round_id || '';
-    const round = roundId ? await readJson('get_round', [roundId]) : null;
+    const roomR = await readJson('get_room_state', []);
+    const galleryR = await readJson('get_gallery', []);
+    const roundId = currentRoundId || roomR.data?.current_round_id || '';
+    const roundR = roundId ? await readJson('get_round', [roundId]) : null;
     const galleryRounds = {};
-    for (const e of gallery?.entries || []) {
-      try { galleryRounds[e.round_id] = await readJson('get_round', [e.round_id]); } catch { /* keep gallery entry without image */ }
+    // The snapshot flag is the AND of every constituent latest-final read
+    // envelope — computed from readFinal's stamps only, never asserted here.
+    let finalized = roomR.finalized && galleryR.finalized && (roundR ? roundR.finalized : true);
+    for (const e of galleryR.data?.entries || []) {
+      try {
+        const rr = await readJson('get_round', [e.round_id]);
+        galleryRounds[e.round_id] = rr.data;
+        finalized = finalized && rr.finalized;
+      } catch { /* keep gallery entry without image */ }
     }
-    let stats = null;
+    let statsR = null;
     if (wallet?.address) {
-      try { stats = await readJson('get_player_stats', [wallet.address.toLowerCase()]); } catch { stats = null; }
+      try {
+        statsR = await readJson('get_player_stats', [wallet.address.toLowerCase()]);
+        finalized = finalized && statsR.finalized;
+      } catch { statsR = null; }
     }
-    snapshot = { room, round, gallery, galleryRounds, stats, readBackAt: new Date().toISOString() };
+    snapshot = { room: roomR.data, round: roundR ? roundR.data : null, gallery: galleryR.data,
+      galleryRounds, stats: statsR ? statsR.data : null, finalized,
+      readAt: roomR.readAt, readBackAt: roomR.readAt };
     const fired = await maybeAutoReveal();
     if (fired) setTimeout(() => refreshSnapshot(), 5000); // re-read after the auto-reveal settles
   } catch (error) {
@@ -712,8 +734,12 @@ async function updateTimeoutButton() {
 // ------------------------------------------------------------------
 function exportRoundDossier(roundId) {
   const round = snapshot?.galleryRounds[roundId] || (snapshot?.round?.round_id === roundId ? snapshot.round : null);
+  // Gate 11: the export consumes the snapshot's own finalized flag, as
+  // produced by readFinal and threaded through refreshSnapshot. It never
+  // asserts the flag itself — a snapshot without the flag fails the gate
+  // inside buildDossier.
   const dossier = buildDossier(round, snapshot
-    ? { finalized: true, contract_address: CONTRACT_ADDRESS, source_sha256: SOURCE_SHA256, readback_at: snapshot.readBackAt }
+    ? { finalized: snapshot.finalized, contract_address: CONTRACT_ADDRESS, source_sha256: SOURCE_SHA256, readback_at: snapshot.readBackAt }
     : null);
   const blob = new Blob([JSON.stringify(dossier, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
